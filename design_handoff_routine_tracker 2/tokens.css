@@ -1,0 +1,59 @@
+/* 디자인 토큰 — 여기만 바꾸면 전체 룩 변경.
+   출처: claude.ai/design "GymCheck UI 디자인 시스템" → Foundations.dc.html */
+:root {
+  /* 브랜드 — 딥 틸/그린 */
+  --color-primary: #0ea5a4;
+  --color-primary-50: #f0fdfa;
+  --color-primary-100: #ccfbf1;
+  --color-primary-200: #99f6e4;
+  --color-primary-300: #5eead4;
+  --color-primary-400: #2dd4bf;
+  --color-primary-500: #14b8a6;
+  --color-primary-600: #0ea5a4;
+  --color-primary-700: #0e7c7b;
+  --color-primary-800: #115e59;
+  --color-primary-900: #134e4a;
+  --color-primary-dark: #0e7c7b;
+  --color-brand-green: #16a34a;
+  --color-brand-tint: #ecfdf5;
+  --gradient-brand: linear-gradient(135deg, #0ea5a4, #16a34a);
+
+  /* 상태 — 의미 고정 (Solid + Soft) */
+  --color-active: #16a34a;
+  --color-active-bg: #ecfdf5;
+  --color-active-text: #15803d;
+  --color-expired: #dc2626;
+  --color-expired-bg: #fef2f2;
+  --color-expired-text: #b91c1c;
+  --color-paused: #f59e0b;
+  --color-paused-bg: #fffbeb;
+  --color-paused-text: #b45309;
+  --color-pending: #2563eb; /* Foundations에 없어 팔레트 일관 유지하며 추가(미등록 회색과 구분) */
+  --color-pending-bg: #eff6ff;
+  --color-pending-text: #1d4ed8;
+  --color-notfound: #6b7280;
+  --color-notfound-bg: #f1f5f9;
+  --color-notfound-text: #475569;
+
+  /* 중립 — 텍스트 · 배경 · 보더 */
+  --color-text: #111827;        /* ink-900 */
+  --color-muted: #64748b;       /* slate-500 */
+  --color-bg: #f1f5f9;          /* page surface */
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-field-border: #cbd5e1;
+
+  /* 타이포 */
+  --font-sans: 'Pretendard', system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+
+  /* 모서리 */
+  --radius: 18px;          /* card 기본 */
+  --radius-field: 10px;
+  --radius-pill: 999px;
+
+  /* 그림자 */
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 6px 18px rgba(15, 23, 42, 0.1);
+  --shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.16);
+}
