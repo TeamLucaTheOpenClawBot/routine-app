@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="_ds/design-system-ff8d5de5-1d48-4eb2-9449-5e112642def1/tokens/tokens.css">
+<link rel="stylesheet" href="_ds/design-system-ff8d5de5-1d48-4eb2-9449-5e112642def1/styles.css">
+<script src="_ds/design-system-ff8d5de5-1d48-4eb2-9449-5e112642def1/_ds_bundle.js"></script>
+<style>
+  body { margin:0; background:#eaeff4; font-family: var(--font-sans); }
+  a { color: var(--color-primary); text-decoration: none; }
+  a:hover { color: var(--color-primary-dark); }
+  @keyframes glowPulse { 0%,100%{filter:brightness(1)} 50%{filter:brightness(1.14)} }
+</style>
+</helmet>
+<section style="min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:40px 20px 64px;box-sizing:border-box">
+      <dc-import name="RoutinePhone" view="{{ viewCards }}" hint-size="390px,844px"></dc-import>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  WEEKS_BACK = 8;
+  WEEKS_FWD = 2;
+  TOTAL_WEEKS = 11;
+  TODAY = new Date(2026, 6, 15);
+  WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+  PALETTE = ['#0EA5A4', '#16A34A', '#2563EB', '#7C3AED', '#E11D48', '#F59E0B', '#0891B2', '#DB2777'];
+  ICON_KEYS = ['dumbbell', 'wine', 'drop', 'book', 'moon', 'leaf', 'run', 'pencil'];
+  ICONS = {
+    dumbbell: [{ d: 'M6.5 12h11' }, { d: 'M6.5 8.5v7' }, { d: 'M4 10v4' }, { d: 'M17.5 8.5v7' }, { d: 'M20 10v4' }],
+    wine: [{ d: 'M8 3.5h8l-.6 4.7a3.4 3.4 0 0 1-6.8 0L8 3.5z' }, { d: 'M12 13.4v5.6' }, { d: 'M8.7 19h6.6' }],
+    drop: [{ d: 'M12 3.8c0 0 5.7 6.1 5.7 10.2a5.7 5.7 0 0 1-11.4 0c0-4.1 5.7-10.2 5.7-10.2z' }],
+    book: [{ d: 'M12 6.2c-1.7-1.1-3.8-1.6-6.2-1.5v12.6c2.4-.1 4.5.4 6.2 1.5 1.7-1.1 3.8-1.6 6.2-1.5V4.7c-2.4-.1-4.5.4-6.2 1.5z' }, { d: 'M12 6.2v12.6' }],
+    moon: [{ d: 'M20 14.8A8 8 0 1 1 9.2 4a6.4 6.4 0 0 0 10.8 10.8z' }],
+    leaf: [{ d: 'M5 19c0-7.7 6-13 14-13 0 7.7-6 13-14 13z' }, { d: 'M5.5 18.5c2.8-4 5.8-6.2 9-7.3' }],
+    run: [{ c: [15.5, 5, 1.7] }, { d: 'M4 20.5l3.2-4.2 3 1.1 1.8-3.2' }, { d: 'M8.5 10.2l4-1 3 3 3.2 1' }, { d: 'M12.5 9.2l-1.2 4' }],
+    pencil: [{ d: 'M4 20l4-1L19 8a2 2 0 0 0-3-3L5 16l-1 4z' }, { d: 'M14.5 6.5l3 3' }],
+    trashbin: [{ d: 'M5 7h14' }, { d: 'M9 7V5h6v2' }, { d: 'M6.6 7l.8 12a1 1 0 0 0 1 1h7.2a1 1 0 0 0 1-1l.8-12' }, { d: 'M10 11v6' }, { d: 'M14 11v6' }],
+  };
+  ONBOARD_STEPS = [
+    { n: '1', title: '루틴 만들기', desc: '아이콘 · 색 · 주간 목표 설정' },
+    { n: '2', title: '매일 탭해서 체크', desc: '날짜를 눌러 완료 표시' },
+    { n: '3', title: '주간 목표 달성', desc: '채운 주는 캘린더에 빛나요' },
+  ];
+  LAYOUT = { '1a': 'grid', '1b': 'cards', '1c': 'compact', 'onb': 'cards' };
+  state = this.makeInitialState();
+
+  // ---- date helpers ----
+  addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+  startOfWeek(d) { return this.addDays(d, -d.getDay()); }
+  dateKey(d) { const m = ('' + (d.getMonth() + 1)).padStart(2, '0'); const dd = ('' + d.getDate()).padStart(2, '0'); return d.getFullYear() + '-' + m + '-' + dd; }
+  parseKey(k) { const p = k.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  rangeStart() { return this.startOfWeek(this.addDays(this.TODAY, -this.WEEKS_BACK * 7)); }
+  currentWeekStart() { return this.startOfWeek(this.TODAY); }
+  _mulberry(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  rgba(hex, a) { const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16); return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')'; }
+
+  iconEl(key, size, color, sw) {
+    const defs = this.ICONS[key] || this.ICONS.leaf;
+    const kids = defs.map((s, i) => s.c
+      ? React.createElement('circle', { cx: s.c[0], cy: s.c[1], r: s.c[2], key: i })
+      : React.createElement('path', { d: s.d, key: i }));
+    return React.createElement('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth: sw || 2, strokeLinecap: 'round', strokeLinejoin: 'round', style: { display: 'block' } }, kids);
+  }
+
+  // ---- seed / state ----
+  makeRoutines() {
+    return [
+      { id: 'r1', name: '운동', iconKey: 'dumbbell', color: '#0EA5A4', goalType: 'atLeast', goalCount: 7, visible: true },
+      { id: 'r2', name: '음주', iconKey: 'wine', color: '#E11D48', goalType: 'atMost', goalCount: 1, visible: true },
+      { id: 'r3', name: '물 마시기', iconKey: 'drop', color: '#2563EB', goalType: 'atLeast', goalCount: 7, visible: true },
+      { id: 'r4', name: '독서', iconKey: 'book', color: '#7C3AED', goalType: 'atLeast', goalCount: 3, visible: true },
+    ];
+  }
+  seedChecks() {
+    const probs = { r1: 0.82, r2: 0.15, r3: 0.88, r4: 0.5 };
+    const routines = this.makeRoutines();
+    const start = this.rangeStart();
+    const checks = {};
+    routines.forEach((r, ri) => {
+      const rand = this._mulberry(1000 + ri * 777);
+      for (let off = 0; off < 400; off++) {
+        const d = this.addDays(start, off);
+        if (!(d < this.TODAY)) break;
+        if (rand() < probs[r.id]) { const k = this.dateKey(d); (checks[k] || (checks[k] = {}))[r.id] = true; }
+      }
+    });
+    return checks;
+  }
+  makeInitialState() {
+    const seed = this.seedChecks();
+    const mk = () => ({ routines: this.makeRoutines(), checks: JSON.parse(JSON.stringify(seed)), sheetDay: null, showManager: false, showStats: false });
+    return { apps: { '1a': mk(), '1b': mk(), '1c': mk(), 'onb': { routines: [], checks: {}, sheetDay: null, showManager: false, showStats: false } } };
+  }
+
+  // ---- mutations ----
+  mutateApp(optId, fn) { this.setState(s => { const app = { ...s.apps[optId] }; fn(app); return { apps: { ...s.apps, [optId]: app } }; }); }
+  openDay(optId, key) { this.mutateApp(optId, a => { a.sheetDay = key; a.showManager = false; a.showStats = false; }); }
+  closeSheet(optId) { this.mutateApp(optId, a => { a.sheetDay = null; }); }
+  openManager(optId) { this.mutateApp(optId, a => { a.showManager = true; a.sheetDay = null; a.showStats = false; }); }
+  closeManager(optId) { this.mutateApp(optId, a => { a.showManager = false; }); }
+  openStats(optId) { this.mutateApp(optId, a => { a.showStats = true; a.sheetDay = null; a.showManager = false; }); }
+  closeStats(optId) { this.mutateApp(optId, a => { a.showStats = false; }); }
+  toggleCheck(optId, key, rid) {
+    this.mutateApp(optId, a => {
+      const ch = { ...a.checks }; const cur = { ...(ch[key] || {}) };
+      if (cur[rid]) delete cur[rid]; else cur[rid] = true;
+      if (Object.keys(cur).length) ch[key] = cur; else delete ch[key];
+      a.checks = ch;
+    });
+  }
+  toggleVisible(optId, rid) { this.mutateApp(optId, a => { a.routines = a.routines.map(r => r.id === rid ? { ...r, visible: !r.visible } : r); }); }
+  updateRoutine(optId, rid, patch) { this.mutateApp(optId, a => { a.routines = a.routines.map(r => r.id === rid ? { ...r, ...patch } : r); }); }
+  setGoalType(optId, rid, type) {
+    this.mutateApp(optId, a => {
+      a.routines = a.routines.map(r => {
+        if (r.id !== rid) return r;
+        let c = r.goalCount;
+        if (type === 'atLeast' && c < 1) c = 1;
+        if (type === 'atMost' && c > 6) c = 6;
+        return { ...r, goalType: type, goalCount: c };
+      });
+    });
+  }
+  incGoal(optId, rid, delta) {
+    this.mutateApp(optId, a => {
+      a.routines = a.routines.map(r => {
+        if (r.id !== rid) return r;
+        const min = r.goalType === 'atLeast' ? 1 : 0;
+        const c = Math.max(min, Math.min(7, r.goalCount + delta));
+        return { ...r, goalCount: c };
+      });
+    });
+  }
+  addRoutine(optId) {
+    this.mutateApp(optId, a => {
+      if (a.routines.length >= 5) return;
+      const usedC = a.routines.map(r => r.color);
+      const color = this.PALETTE.find(c => !usedC.includes(c)) || this.PALETTE[a.routines.length % this.PALETTE.length];
+      const usedI = a.routines.map(r => r.iconKey);
+      const iconKey = this.ICON_KEYS.find(k => !usedI.includes(k)) || 'leaf';
+      this._uid = (this._uid || 100) + 1;
+      a.routines = [...a.routines, { id: 'r' + this._uid, name: '새 루틴', iconKey, color, goalType: 'atLeast', goalCount: 3, visible: true }];
+      a.showManager = true;
+    });
+  }
+  deleteRoutine(optId, rid) { this.mutateApp(optId, a => { if (a.routines.length <= 1) return; a.routines = a.routines.filter(r => r.id !== rid); }); }
+
+  goalText(r) { return r.goalType === 'atLeast' ? '주 ' + r.goalCount + '회 이상' : '주 ' + r.goalCount + '회 이하'; }
+
+  // ---- view builders ----
+  chipVM(r) {
+    return {
+      style: { width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', background: this.rgba(r.color, 0.16), boxShadow: '0 0 0 1.5px ' + this.rgba(r.color, 0.85) + ', 0 0 9px ' + this.rgba(r.color, 0.5), animation: 'glowPulse 2.6s ease-in-out infinite' },
+      dotStyle: { width: 8, height: 8, borderRadius: '50%', flex: '0 0 auto', background: r.color, boxShadow: '0 0 5px ' + this.rgba(r.color, 0.7), animation: 'glowPulse 2.6s ease-in-out infinite' },
+      iconEl: this.iconEl(r.iconKey, 13, r.color, 2.2),
+    };
+  }
+  iconCellVM(r, done, glow, layout) {
+    const size = 18;
+    const glyph = 12;
+    const base = { width: size, height: size, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' };
+    let wrapStyle, color;
+    if (done) {
+      color = r.color;
+      wrapStyle = { ...base, background: this.rgba(r.color, 0.15) };
+      if (glow) { wrapStyle.boxShadow = '0 0 0 1.5px ' + this.rgba(r.color, 0.9) + ', 0 0 8px ' + this.rgba(r.color, 0.5); wrapStyle.animation = 'glowPulse 2.6s ease-in-out infinite'; }
+    } else { color = '#CBD5E1'; wrapStyle = { ...base, background: 'transparent' }; }
+    const dotStyle = done
+      ? { width: 9, height: 9, borderRadius: 3, flex: '0 0 auto', background: r.color, ...(glow ? { boxShadow: '0 0 0 1px ' + this.rgba(r.color, 0.9) + ', 0 0 6px ' + this.rgba(r.color, 0.6), animation: 'glowPulse 2.6s ease-in-out infinite' } : {}) }
+      : { width: 9, height: 9, borderRadius: 3, flex: '0 0 auto', background: '#E2E8F0' };
+    return { wrapStyle, iconEl: this.iconEl(r.iconKey, glyph, color, 2), dotStyle };
+  }
+  weekdayHeaderStyle(i) { return { textAlign: 'center', fontSize: 11, fontWeight: 700, color: i === 0 ? '#E11D48' : (i === 6 ? '#2563EB' : 'var(--color-muted)') }; }
+  cardStyle(isCurrent) { return { background: 'var(--color-surface)', border: isCurrent ? '1.5px solid var(--color-primary)' : '1px solid var(--color-border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)', padding: '13px 13px 14px' }; }
+  rangeLabel(ws, we) { return (ws.getMonth() + 1) + '.' + ws.getDate() + ' – ' + (we.getMonth() + 1) + '.' + we.getDate(); }
+
+  dayVM(d, layout, o) {
+    const weekendColor = o.dow === 0 ? '#E11D48' : (o.dow === 6 ? '#2563EB' : null);
+    let cellStyle, dateWrapStyle = {}, dateTextStyle, weekdayStyle = {};
+    if (layout === 'grid') {
+      cellStyle = { position: 'relative', minHeight: 62, borderRadius: 12, border: '1px solid var(--color-border)', background: 'var(--color-surface)', padding: '6px 3px 5px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, boxSizing: 'border-box', cursor: o.onTap ? 'pointer' : 'default' };
+      if (o.isToday) { cellStyle.boxShadow = '0 0 0 2px var(--color-primary)'; cellStyle.borderColor = 'transparent'; }
+      else if (o.isFuture) { cellStyle.background = '#F8FAFC'; }
+      if (o.isToday) { dateWrapStyle = { width: 20, height: 20, borderRadius: '50%', background: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }; dateTextStyle = { fontSize: 11.5, fontWeight: 800, color: '#fff' }; }
+      else { dateWrapStyle = { height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }; dateTextStyle = { fontSize: 11.5, fontWeight: 700, color: o.isFuture ? '#CBD5E1' : (weekendColor || 'var(--color-text)') }; }
+    } else if (layout === 'cards') {
+      cellStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, padding: '4px 0 6px', borderRadius: 10, cursor: o.onTap ? 'pointer' : 'default' };
+      if (o.isToday) cellStyle.background = 'var(--color-primary-50)';
+      weekdayStyle = { fontSize: 10, fontWeight: 700, color: o.isFuture ? '#CBD5E1' : (weekendColor || 'var(--color-muted)'), marginBottom: 1 };
+      if (o.isToday) { dateWrapStyle = { width: 22, height: 22, borderRadius: '50%', background: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '1px 0' }; dateTextStyle = { fontSize: 12, fontWeight: 800, color: '#fff' }; }
+      else { dateWrapStyle = { width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '1px 0' }; dateTextStyle = { fontSize: 12.5, fontWeight: 700, color: o.isFuture ? '#CBD5E1' : (weekendColor || 'var(--color-text)') }; }
+    } else {
+      cellStyle = { minHeight: 38, borderRadius: 7, border: '1px solid var(--color-border)', background: 'var(--color-surface)', padding: '3px 1px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, boxSizing: 'border-box', cursor: o.onTap ? 'pointer' : 'default' };
+      if (o.isToday) { cellStyle.boxShadow = '0 0 0 1.5px var(--color-primary)'; cellStyle.borderColor = 'transparent'; }
+      else if (o.isFuture) cellStyle.background = '#F8FAFC';
+      dateTextStyle = { fontSize: 9.5, fontWeight: 700, lineHeight: 1.1, color: o.isToday ? 'var(--color-primary)' : (o.isFuture ? '#CBD5E1' : (weekendColor || 'var(--color-muted)')) };
+    }
+    return { onTap: o.onTap, cellStyle, dateWrapStyle, dateTextStyle, dateNum: d.getDate(), hasIcons: o.icons.length > 0, icons: o.icons, weekdayLabel: this.WEEKDAYS[o.dow], weekdayStyle };
+  }
+
+  sheetVM(optId, dayKey) {
+    const app = this.state.apps[optId];
+    const visible = app.routines.filter(r => r.visible);
+    const checks = app.checks;
+    const d = this.parseKey(dayKey);
+    const rows = visible.map(r => {
+      const done = !!(checks[dayKey] && checks[dayKey][r.id]);
+      return {
+        rowStyle: { display: 'flex', alignItems: 'center', gap: 13, padding: '12px 13px', borderRadius: 16, border: '1px solid var(--color-border)', background: done ? this.rgba(r.color, 0.07) : 'var(--color-surface)', cursor: 'pointer' },
+        iconWrapStyle: { width: 40, height: 40, borderRadius: 12, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: this.rgba(r.color, done ? 0.16 : 0.1) },
+        iconEl: this.iconEl(r.iconKey, 22, r.color, 2),
+        name: r.name, goalText: this.goalText(r), done,
+        checkStyle: done
+          ? { width: 30, height: 30, borderRadius: '50%', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-primary)', color: '#fff' }
+          : { width: 30, height: 30, borderRadius: '50%', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--color-field-border)', background: 'transparent', color: 'transparent' },
+        onToggle: () => this.toggleCheck(optId, dayKey, r.id),
+      };
+    });
+    return { dateLabel: (d.getMonth() + 1) + '월 ' + d.getDate() + '일', weekdayLabel: this.WEEKDAYS[d.getDay()] + '요일', rows, onClose: () => this.closeSheet(optId) };
+  }
+
+  managerVM(optId) {
+    const routines = this.state.apps[optId].routines;
+    const segSel = { padding: '6px 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: 'pointer', background: 'var(--color-primary)', color: '#fff' };
+    const segUn = { padding: '6px 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'transparent', color: 'var(--color-muted)' };
+    const step = { width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', fontSize: 17, fontWeight: 800, color: 'var(--color-text)', cursor: 'pointer' };
+    const stepDim = { ...step, color: 'var(--color-field-border)', cursor: 'default' };
+    const rows = routines.map(r => {
+      const isAtLeast = r.goalType === 'atLeast';
+      const minC = isAtLeast ? 1 : 0;
+      return {
+        iconBoxStyle: { width: 44, height: 44, borderRadius: 12, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: this.rgba(r.color, 0.15) },
+        iconEl: this.iconEl(r.iconKey, 24, r.color, 2),
+        name: r.name,
+        onName: (e) => this.updateRoutine(optId, r.id, { name: e.target.value }),
+        onToggleVisible: () => this.toggleVisible(optId, r.id),
+        eyeStyle: { cursor: 'pointer', padding: '6px 10px', borderRadius: 9, fontSize: 12, fontWeight: 700, background: r.visible ? 'var(--color-primary-50)' : 'var(--color-bg)', color: r.visible ? 'var(--color-primary)' : 'var(--color-muted)' },
+        eyeLabel: r.visible ? '표시' : '숨김',
+        onDelete: () => this.deleteRoutine(optId, r.id),
+        trashEl: this.iconEl('trashbin', 16, '#94A3B8', 2),
+        trashStyle: { cursor: routines.length > 1 ? 'pointer' : 'default', width: 34, height: 34, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-bg)', opacity: routines.length > 1 ? 1 : 0.35 },
+        onSetAtLeast: () => this.setGoalType(optId, r.id, 'atLeast'),
+        onSetAtMost: () => this.setGoalType(optId, r.id, 'atMost'),
+        segAtLeastStyle: isAtLeast ? segSel : segUn,
+        segAtMostStyle: !isAtLeast ? segSel : segUn,
+        onDec: () => this.incGoal(optId, r.id, -1),
+        onInc: () => this.incGoal(optId, r.id, 1),
+        decStyle: r.goalCount > minC ? step : stepDim,
+        incStyle: r.goalCount < 7 ? step : stepDim,
+        countLabel: '주 ' + r.goalCount + '회',
+        swatches: this.PALETTE.map(c => ({ onPick: () => this.updateRoutine(optId, r.id, { color: c }), style: { width: 26, height: 26, borderRadius: '50%', background: c, cursor: 'pointer', flex: '0 0 auto', boxShadow: r.color === c ? '0 0 0 2px #fff, 0 0 0 4px ' + c : 'none' } })),
+        iconChoices: this.ICON_KEYS.map(k => ({ onPick: () => this.updateRoutine(optId, r.id, { iconKey: k }), iconEl: this.iconEl(k, 20, r.iconKey === k ? r.color : '#94A3B8', 2), style: { width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flex: '0 0 auto', background: r.iconKey === k ? this.rgba(r.color, 0.15) : 'var(--color-bg)', boxShadow: r.iconKey === k ? '0 0 0 1.5px ' + r.color : 'none' } })),
+      };
+    });
+    const full = routines.length >= 5;
+    return {
+      onClose: () => this.closeManager(optId), onAdd: () => this.addRoutine(optId),
+      addStyle: { cursor: full ? 'default' : 'pointer', minHeight: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 14, border: '1.5px dashed var(--color-field-border)', color: full ? 'var(--color-field-border)' : 'var(--color-primary)', fontSize: 15, fontWeight: 800, background: full ? 'var(--color-bg)' : 'var(--color-primary-50)' },
+      addCountLabel: '(' + routines.length + '/5)', rows,
+    };
+  }
+
+  statsVM(optId) {
+    const app = this.state.apps[optId];
+    const visible = app.routines.filter(r => r.visible);
+    const checks = app.checks;
+    const rangeStart = this.rangeStart();
+    const rows = visible.map(r => {
+      const results = [];
+      for (let w = 0; w < this.TOTAL_WEEKS; w++) {
+        const ws = this.addDays(rangeStart, w * 7); const we = this.addDays(ws, 6);
+        if (!(we < this.TODAY)) continue;
+        let cnt = 0; for (let i = 0; i < 7; i++) { const k = this.dateKey(this.addDays(ws, i)); if (checks[k] && checks[k][r.id]) cnt++; }
+        results.push(r.goalType === 'atLeast' ? cnt >= r.goalCount : cnt <= r.goalCount);
+      }
+      const fin = results.length; const ach = results.filter(Boolean).length;
+      let streak = 0; for (let i = results.length - 1; i >= 0; i--) { if (results[i]) streak++; else break; }
+      const pct = fin ? Math.round(ach / fin * 100) : 0;
+      return {
+        iconWrapStyle: { width: 32, height: 32, borderRadius: 9, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: this.rgba(r.color, 0.15) },
+        iconEl: this.iconEl(r.iconKey, 18, r.color, 2), name: r.name, goalText: this.goalText(r),
+        rateText: pct + '%', rateStyle: { fontSize: 16, fontWeight: 800, color: r.color }, streakText: streak + '주',
+        barStyle: { height: '100%', width: pct + '%', background: r.color, borderRadius: 999 },
+      };
+    });
+    return { onClose: () => this.closeStats(optId), summaryText: '최근 ' + this.WEEKS_BACK + '주 기준 · 달성률과 현재 연속', rows };
+  }
+
+  buildView(optId) {
+    const layout = this.LAYOUT[optId];
+    const app = this.state.apps[optId];
+    const routines = app.routines;
+    const visible = routines.filter(r => r.visible);
+    const checks = app.checks;
+    const isDone = (d, rid) => { const k = this.dateKey(d); return !!(checks[k] && checks[k][rid]); };
+    const rangeStart = this.rangeStart();
+    const weeks = [];
+    let prevMk = null;
+    for (let w = 0; w < this.TOTAL_WEEKS; w++) {
+      const ws = this.addDays(rangeStart, w * 7);
+      const we = this.addDays(ws, 6);
+      const finalized = we < this.TODAY;
+      const isCurrent = ws <= this.TODAY && this.TODAY <= we;
+      const achievedIds = {};
+      const chips = [];
+      visible.forEach(r => {
+        let cnt = 0; for (let i = 0; i < 7; i++) if (isDone(this.addDays(ws, i), r.id)) cnt++;
+        const ach = finalized && (r.goalType === 'atLeast' ? cnt >= r.goalCount : cnt <= r.goalCount);
+        if (ach) { achievedIds[r.id] = true; chips.push(this.chipVM(r)); }
+      });
+      const days = [];
+      for (let i = 0; i < 7; i++) {
+        const d = this.addDays(ws, i);
+        const isToday = this.dateKey(d) === this.dateKey(this.TODAY);
+        const isFuture = d > this.TODAY;
+        const icons = isFuture ? [] : visible.map(r => this.iconCellVM(r, isDone(d, r.id), finalized && isDone(d, r.id) && !!achievedIds[r.id], layout));
+        days.push(this.dayVM(d, layout, { isToday, isFuture, dow: d.getDay(), icons, onTap: isFuture ? null : (() => this.openDay(optId, this.dateKey(d))) }));
+      }
+      const mk = ws.getFullYear() * 12 + ws.getMonth();
+      const hasDivider = prevMk === null || mk !== prevMk;
+      const dividerLabel = (ws.getMonth() === 0 || prevMk === null) ? (ws.getFullYear() + '년 ' + (ws.getMonth() + 1) + '월') : ((ws.getMonth() + 1) + '월');
+      prevMk = mk;
+      weeks.push({
+        currentFlag: isCurrent ? '1' : '0', hasDivider, dividerLabel,
+        rangeLabel: this.rangeLabel(ws, we), startShort: (ws.getMonth() + 1) + '/' + ws.getDate(),
+        currentBadge: isCurrent, hasChips: chips.length > 0, chips, days, cardStyle: this.cardStyle(isCurrent),
+      });
+    }
+
+    let statText;
+    if (routines.length === 0) statText = '루틴을 추가해 시작하세요';
+    else if (visible.length === 0) statText = '표시된 루틴이 없어요';
+    else {
+      const cw = this.currentWeekStart(); let n = 0;
+      visible.forEach(r => { let cnt = 0; for (let i = 0; i < 7; i++) if (isDone(this.addDays(cw, i), r.id)) cnt++; if (r.goalType === 'atLeast' ? cnt >= r.goalCount : cnt <= r.goalCount) n++; });
+      statText = '이번 주 ' + n + '/' + visible.length + ' 순항 중';
+    }
+
+    return {
+      layout,
+      phoneId: optId,
+      monthTitle: this.TODAY.getFullYear() + '년 ' + (this.TODAY.getMonth() + 1) + '월',
+      headerStatText: statText,
+      onOpenStats: () => this.openStats(optId),
+      onOpenManager: () => this.openManager(optId),
+      weekdayHeader: this.WEEKDAYS.map((label, i) => ({ label, style: this.weekdayHeaderStyle(i) })),
+      showOnboard: routines.length === 0,
+      showGrid: layout === 'grid' && routines.length > 0,
+      showCards: layout === 'cards' && routines.length > 0,
+      showCompact: layout === 'compact' && routines.length > 0,
+      onboard: { steps: this.ONBOARD_STEPS, onAdd: () => this.addRoutine(optId) },
+      weeks,
+      sheetOpen: !!app.sheetDay, sheet: app.sheetDay ? this.sheetVM(optId, app.sheetDay) : null,
+      managerOpen: !!app.showManager, manager: app.showManager ? this.managerVM(optId) : null,
+      statsOpen: !!app.showStats, stats: app.showStats ? this.statsVM(optId) : null,
+    };
+  }
+
+  renderVals() {
+    return {
+      viewCards: this.buildView('1b'),
+    };
+  }
+}
+</script>
+</body>
+</html>

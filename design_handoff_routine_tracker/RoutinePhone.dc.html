@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="_ds/design-system-ff8d5de5-1d48-4eb2-9449-5e112642def1/tokens/tokens.css">
+<link rel="stylesheet" href="_ds/design-system-ff8d5de5-1d48-4eb2-9449-5e112642def1/styles.css">
+<script src="_ds/design-system-ff8d5de5-1d48-4eb2-9449-5e112642def1/_ds_bundle.js"></script>
+<style>
+  [data-scroll]::-webkit-scrollbar { display: none; }
+  [data-scroll] { scrollbar-width: none; }
+  @keyframes glowPulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.12); }
+  }
+  .rp-input { font-family: var(--font-sans); }
+  .rp-input:focus { outline: none; }
+</style>
+</helmet>
+<div data-phone="{{ view.phoneId }}" style="width:390px;height:844px;background:var(--color-bg);border-radius:44px;border:1px solid var(--color-border);box-shadow:var(--shadow-lg);overflow:hidden;position:relative;display:flex;flex-direction:column;font-family:var(--font-sans);color:var(--color-text)">
+
+  <!-- status bar -->
+  <div style="height:44px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 26px;font-size:13px;font-weight:700;color:var(--color-text);background:var(--color-surface)">
+    <span>9:41</span>
+    <span style="display:flex;gap:7px;align-items:center;font-size:12px;font-weight:800;color:var(--color-text)">
+      <span>5G</span>
+      <span style="display:inline-block;width:23px;height:12px;border:1.5px solid var(--color-text);border-radius:3px;position:relative">
+        <span style="position:absolute;top:1.5px;bottom:1.5px;left:1.5px;right:6px;background:var(--color-text);border-radius:1px"></span>
+        <span style="position:absolute;top:3.5px;bottom:3.5px;right:-2.5px;width:2px;background:var(--color-text);border-radius:1px"></span>
+      </span>
+    </span>
+  </div>
+
+  <!-- app header -->
+  <div style="flex:0 0 auto;padding:8px 18px 12px;display:flex;align-items:flex-end;justify-content:space-between;gap:8px;background:var(--color-surface);border-bottom:1px solid var(--color-border)">
+    <div style="min-width:0">
+      <div style="font-size:20px;font-weight:800;letter-spacing:-0.02em;color:var(--color-text)">{{ view.monthTitle }}</div>
+      <div style="font-size:12.5px;color:var(--color-muted);margin-top:3px;font-weight:600">{{ view.headerStatText }}</div>
+    </div>
+    <div style="display:flex;gap:7px;flex:0 0 auto">
+      <div onClick="{{ view.onOpenStats }}" style="cursor:pointer;padding:8px 12px;border-radius:10px;background:var(--color-bg);color:var(--color-muted);font-size:13px;font-weight:700">통계</div>
+      <div onClick="{{ view.onOpenManager }}" style="cursor:pointer;padding:8px 13px;border-radius:10px;background:var(--color-primary);color:#fff;font-size:13px;font-weight:700">관리</div>
+    </div>
+  </div>
+
+  <!-- scroll area -->
+  <div data-scroll="1" style="flex:1 1 auto;overflow-y:auto;position:relative">
+
+    <!-- ===== ONBOARDING / EMPTY ===== -->
+    <sc-if value="{{ view.showOnboard }}" hint-placeholder-val="{{ false }}">
+      <div style="min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 30px;gap:18px">
+        <x-import component-from-global-scope="GymCheck.Logo" from="_ds/design-system-ff8d5de5-1d48-4eb2-9449-5e112642def1/_ds_bundle.js" size="64" hint-size="64px,64px"></x-import>
+        <div>
+          <div style="font-size:22px;font-weight:800;letter-spacing:-0.02em">매일의 루틴,<br>한 눈에 채워보세요</div>
+          <div style="font-size:13.5px;color:var(--color-muted);margin-top:8px;line-height:1.5;font-weight:500">루틴을 만들고 하루하루 체크하면<br>주간 목표 달성이 캘린더에 쌓여요</div>
+        </div>
+        <div style="width:100%;display:flex;flex-direction:column;gap:10px;margin-top:4px">
+          <sc-for list="{{ view.onboard.steps }}" as="step" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:12px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:16px;padding:13px 15px;text-align:left">
+              <div style="flex:0 0 auto;width:30px;height:30px;border-radius:50%;background:var(--color-primary-50);color:var(--color-primary);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px">{{ step.n }}</div>
+              <div style="min-width:0">
+                <div style="font-size:14px;font-weight:700;color:var(--color-text)">{{ step.title }}</div>
+                <div style="font-size:12px;color:var(--color-muted);margin-top:1px">{{ step.desc }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div onClick="{{ view.onboard.onAdd }}" style="cursor:pointer;margin-top:6px;width:100%;min-height:56px;display:flex;align-items:center;justify-content:center;background:var(--gradient-brand);color:#fff;font-size:17px;font-weight:800;border-radius:16px;box-shadow:var(--shadow-md)">첫 루틴 만들기</div>
+      </div>
+    </sc-if>
+
+    <!-- ===== GRID LAYOUT ===== -->
+    <sc-if value="{{ view.showGrid }}" hint-placeholder-val="{{ false }}">
+      <div style="position:sticky;top:0;z-index:5;background:var(--color-bg);display:grid;grid-template-columns:repeat(7,1fr);gap:5px;padding:9px 12px 6px">
+        <sc-for list="{{ view.weekdayHeader }}" as="wd" hint-placeholder-count="7">
+          <div style="{{ wd.style }}">{{ wd.label }}</div>
+        </sc-for>
+      </div>
+      <div style="padding:0 12px 26px">
+        <sc-for list="{{ view.weeks }}" as="week" hint-placeholder-count="6">
+          <sc-if value="{{ week.hasDivider }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:12px;font-weight:800;color:var(--color-muted);padding:12px 2px 6px;letter-spacing:0.02em">{{ week.dividerLabel }}</div>
+          </sc-if>
+          <div data-current="{{ week.currentFlag }}" style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:5px">
+            <sc-for list="{{ week.days }}" as="day" hint-placeholder-count="7">
+              <div onClick="{{ day.onTap }}" style="{{ day.cellStyle }}">
+                <div style="{{ day.dateWrapStyle }}"><span style="{{ day.dateTextStyle }}">{{ day.dateNum }}</span></div>
+                <sc-if value="{{ day.hasIcons }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center;align-content:flex-start;width:100%">
+                    <sc-for list="{{ day.icons }}" as="ic" hint-placeholder-count="3">
+                      <div style="{{ ic.wrapStyle }}">{{ ic.iconEl }}</div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ week.hasChips }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;padding:1px 2px 9px">
+              <span style="font-size:10.5px;font-weight:700;color:var(--color-active-text)">목표 달성</span>
+              <sc-for list="{{ week.chips }}" as="chip" hint-placeholder-count="2">
+                <div style="{{ chip.style }}">{{ chip.iconEl }}</div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- ===== CARDS LAYOUT ===== -->
+    <sc-if value="{{ view.showCards }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:12px 12px 26px;display:flex;flex-direction:column;gap:11px">
+        <sc-for list="{{ view.weeks }}" as="week" hint-placeholder-count="6">
+          <div data-current="{{ week.currentFlag }}" style="{{ week.cardStyle }}">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:11px">
+              <span style="font-size:13.5px;font-weight:800;color:var(--color-text)">{{ week.rangeLabel }}</span>
+              <sc-if value="{{ week.currentBadge }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:10.5px;font-weight:800;color:var(--color-primary);background:var(--color-primary-50);padding:2px 8px;border-radius:999px">이번 주</span>
+              </sc-if>
+              <div style="flex:1"></div>
+              <sc-if value="{{ week.hasChips }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;gap:5px;align-items:center">
+                  <sc-for list="{{ week.chips }}" as="chip" hint-placeholder-count="2">
+                    <div style="{{ chip.style }}">{{ chip.iconEl }}</div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">
+              <sc-for list="{{ week.days }}" as="day" hint-placeholder-count="7">
+                <div onClick="{{ day.onTap }}" style="{{ day.cellStyle }}">
+                  <span style="{{ day.weekdayStyle }}">{{ day.weekdayLabel }}</span>
+                  <div style="{{ day.dateWrapStyle }}"><span style="{{ day.dateTextStyle }}">{{ day.dateNum }}</span></div>
+                  <sc-if value="{{ day.hasIcons }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center;align-content:flex-start;margin-top:2px;width:100%">
+                      <sc-for list="{{ day.icons }}" as="ic" hint-placeholder-count="3">
+                        <div style="{{ ic.wrapStyle }}">{{ ic.iconEl }}</div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- ===== COMPACT LAYOUT ===== -->
+    <sc-if value="{{ view.showCompact }}" hint-placeholder-val="{{ false }}">
+      <div style="position:sticky;top:0;z-index:5;background:var(--color-bg);display:flex;gap:7px;padding:10px 12px 6px">
+        <div style="flex:0 0 42px"></div>
+        <div style="flex:1;display:grid;grid-template-columns:repeat(7,1fr);gap:4px">
+          <sc-for list="{{ view.weekdayHeader }}" as="wd" hint-placeholder-count="7"><div style="{{ wd.style }}">{{ wd.label }}</div></sc-for>
+        </div>
+      </div>
+      <div style="padding:2px 12px 26px;display:flex;flex-direction:column;gap:5px">
+        <sc-for list="{{ view.weeks }}" as="week" hint-placeholder-count="9">
+          <div data-current="{{ week.currentFlag }}" style="display:flex;align-items:stretch;gap:7px">
+            <div style="flex:0 0 42px;display:flex;flex-direction:column;justify-content:center;gap:3px">
+              <span style="font-size:10.5px;font-weight:800;color:var(--color-muted);line-height:1.1">{{ week.startShort }}</span>
+              <sc-if value="{{ week.hasChips }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-wrap:wrap;gap:3px">
+                  <sc-for list="{{ week.chips }}" as="chip" hint-placeholder-count="2">
+                    <div style="{{ chip.dotStyle }}"></div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+            <div style="flex:1;display:grid;grid-template-columns:repeat(7,1fr);gap:4px">
+              <sc-for list="{{ week.days }}" as="day" hint-placeholder-count="7">
+                <div onClick="{{ day.onTap }}" style="{{ day.cellStyle }}">
+                  <span style="{{ day.dateTextStyle }}">{{ day.dateNum }}</span>
+                  <sc-if value="{{ day.hasIcons }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center;width:100%">
+                      <sc-for list="{{ day.icons }}" as="ic" hint-placeholder-count="3">
+                        <div style="{{ ic.dotStyle }}"></div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+  </div>
+
+  <!-- ===== DAY CHECK SHEET ===== -->
+  <sc-if value="{{ view.sheetOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ view.sheet.onClose }}" style="position:absolute;inset:0;background:rgba(15,23,42,0.34);z-index:15"></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;background:var(--color-surface);border-top-left-radius:26px;border-top-right-radius:26px;box-shadow:var(--shadow-lg);z-index:20;padding:10px 18px 22px;display:flex;flex-direction:column;max-height:84%">
+      <div style="width:40px;height:4px;border-radius:999px;background:var(--color-border);margin:2px auto 12px"></div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div style="font-size:19px;font-weight:800;letter-spacing:-0.01em">{{ view.sheet.dateLabel }}</div>
+          <div style="font-size:12.5px;color:var(--color-muted);margin-top:2px;font-weight:600">{{ view.sheet.weekdayLabel }}</div>
+        </div>
+        <div onClick="{{ view.sheet.onClose }}" style="cursor:pointer;width:32px;height:32px;border-radius:50%;background:var(--color-bg);color:var(--color-muted);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700">✕</div>
+      </div>
+      <div style="overflow-y:auto;display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{ view.sheet.rows }}" as="row" hint-placeholder-count="4">
+          <div onClick="{{ row.onToggle }}" style="{{ row.rowStyle }}">
+            <div style="{{ row.iconWrapStyle }}">{{ row.iconEl }}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:15.5px;font-weight:700;color:var(--color-text)">{{ row.name }}</div>
+              <div style="font-size:12px;color:var(--color-muted);margin-top:1px">{{ row.goalText }}</div>
+            </div>
+            <div style="{{ row.checkStyle }}">
+              <sc-if value="{{ row.done }}" hint-placeholder-val="{{ false }}"><span style="font-size:15px;font-weight:800;line-height:1">✓</span></sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ===== MANAGER SHEET ===== -->
+  <sc-if value="{{ view.managerOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ view.manager.onClose }}" style="position:absolute;inset:0;background:rgba(15,23,42,0.34);z-index:15"></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;background:var(--color-surface);border-top-left-radius:26px;border-top-right-radius:26px;box-shadow:var(--shadow-lg);z-index:20;padding:10px 16px 20px;display:flex;flex-direction:column;max-height:90%">
+      <div style="width:40px;height:4px;border-radius:999px;background:var(--color-border);margin:2px auto 12px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:19px;font-weight:800;letter-spacing:-0.01em">루틴 관리</div>
+        <div onClick="{{ view.manager.onClose }}" style="cursor:pointer;width:32px;height:32px;border-radius:50%;background:var(--color-bg);color:var(--color-muted);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700">✕</div>
+      </div>
+      <div style="overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-bottom:4px">
+        <sc-for list="{{ view.manager.rows }}" as="m" hint-placeholder-count="3">
+          <div style="border:1px solid var(--color-border);border-radius:16px;padding:13px 13px 14px;background:var(--color-surface)">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="{{ m.iconBoxStyle }}">{{ m.iconEl }}</div>
+              <input class="rp-input" value="{{ m.name }}" onChange="{{ m.onName }}" style="flex:1;min-width:0;font-size:15.5px;font-weight:700;color:var(--color-text);border:none;background:transparent;padding:4px 0" />
+              <div onClick="{{ m.onToggleVisible }}" style="{{ m.eyeStyle }}">{{ m.eyeLabel }}</div>
+              <div onClick="{{ m.onDelete }}" style="{{ m.trashStyle }}">{{ m.trashEl }}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:12px">
+              <div style="display:flex;background:var(--color-bg);border-radius:10px;padding:3px;gap:2px">
+                <div onClick="{{ m.onSetAtLeast }}" style="{{ m.segAtLeastStyle }}">이상</div>
+                <div onClick="{{ m.onSetAtMost }}" style="{{ m.segAtMostStyle }}">이하</div>
+              </div>
+              <div style="flex:1"></div>
+              <div style="display:flex;align-items:center;gap:9px;background:var(--color-bg);border-radius:10px;padding:4px 6px">
+                <div onClick="{{ m.onDec }}" style="{{ m.decStyle }}">−</div>
+                <span style="font-size:15px;font-weight:800;min-width:56px;text-align:center;color:var(--color-text)">{{ m.countLabel }}</span>
+                <div onClick="{{ m.onInc }}" style="{{ m.incStyle }}">+</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:7px;margin-top:12px;flex-wrap:wrap">
+              <sc-for list="{{ m.swatches }}" as="sw" hint-placeholder-count="6">
+                <div onClick="{{ sw.onPick }}" style="{{ sw.style }}"></div>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+              <sc-for list="{{ m.iconChoices }}" as="ich" hint-placeholder-count="8">
+                <div onClick="{{ ich.onPick }}" style="{{ ich.style }}">{{ ich.iconEl }}</div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+        <div onClick="{{ view.manager.onAdd }}" style="{{ view.manager.addStyle }}">＋ 루틴 추가 {{ view.manager.addCountLabel }}</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ===== STATS SHEET ===== -->
+  <sc-if value="{{ view.statsOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ view.stats.onClose }}" style="position:absolute;inset:0;background:rgba(15,23,42,0.34);z-index:15"></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;background:var(--color-surface);border-top-left-radius:26px;border-top-right-radius:26px;box-shadow:var(--shadow-lg);z-index:20;padding:10px 18px 22px;display:flex;flex-direction:column;max-height:84%">
+      <div style="width:40px;height:4px;border-radius:999px;background:var(--color-border);margin:2px auto 12px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:19px;font-weight:800;letter-spacing:-0.01em">통계</div>
+        <div onClick="{{ view.stats.onClose }}" style="cursor:pointer;width:32px;height:32px;border-radius:50%;background:var(--color-bg);color:var(--color-muted);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700">✕</div>
+      </div>
+      <div style="font-size:12.5px;color:var(--color-muted);margin-bottom:14px;font-weight:600">{{ view.stats.summaryText }}</div>
+      <div style="overflow-y:auto;display:flex;flex-direction:column;gap:14px">
+        <sc-for list="{{ view.stats.rows }}" as="s" hint-placeholder-count="4">
+          <div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <div style="{{ s.iconWrapStyle }}">{{ s.iconEl }}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:14.5px;font-weight:700;color:var(--color-text)">{{ s.name }}</div>
+                <div style="font-size:11.5px;color:var(--color-muted);margin-top:1px">{{ s.goalText }}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="{{ s.rateStyle }}">{{ s.rateText }}</div>
+                <div style="font-size:11px;color:var(--color-muted);margin-top:1px">연속 {{ s.streakText }}</div>
+              </div>
+            </div>
+            <div style="height:8px;border-radius:999px;background:var(--color-bg);overflow:hidden">
+              <div style="{{ s.barStyle }}"></div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844},&quot;view&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}">
+class Component extends DCLogic {
+  componentDidMount() { this._schedule(); }
+  _schedule() {
+    if (this._sched) return; this._sched = true;
+    [0, 150, 350, 700, 1200].forEach(t => setTimeout(() => this._toToday(), t));
+  }
+  _toToday() {
+    const pid = this.props && this.props.view && this.props.view.phoneId;
+    if (!pid) return;
+    const root = document.querySelector('[data-phone="' + pid + '"]');
+    if (!root) return;
+    const sc = root.querySelector('[data-scroll="1"]');
+    const cur = sc && sc.querySelector('[data-current="1"]');
+    if (sc && cur) sc.scrollTop = Math.max(0, cur.offsetTop - 96);
+  }
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
