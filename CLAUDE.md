@@ -24,9 +24,12 @@
 
 - **로직/뷰 분리**: `src/appLogic.js`는 순수 함수·상수(뷰 의존 없음, 테스트 대상), `src/App.jsx`는 렌더링.
   새 파생 계산은 App의 `useMemo`가 아니라 appLogic의 순수 함수로 빼고 테스트를 동봉한다.
-- **'오늘'은 주입값**: 고정 상수 아님(#1). `startOfToday()`(자정 기준 `new Date()`)를 App이 상태로
-  계산하고, `rangeStart`/`finalizedResults`/`createSeedChecks` 등 순수 함수에 `today` 인자로 주입한다.
-  → 테스트는 고정 날짜를 주입해 결정적으로 검증, 앱은 자정 타이머·포커스/가시성 복귀 시 today를 갱신.
+- **'오늘' 기준 (⚠️ #1에서 today 주입으로 전환 예정 — PR #11)**: **현재 코드**는 `appLogic.js`가
+  `TODAY`(고정 `new Date(2026, 6, 15)`)를 export하고 `rangeStart`/`finalizedResults`/`createSeedChecks`가
+  이를 참조한다(`App.jsx`도 `TODAY`를 직접 import). #1의 목표는 이 고정을 제거하고 `startOfToday()`(자정 기준
+  런타임)를 App이 상태로 계산해 순수 함수에 `today` 인자로 주입하는 것 — 그러면 테스트는 고정 날짜를 주입해
+  결정적으로 검증하고, 앱은 자정 타이머·포커스/가시성 복귀 시 today를 갱신한다. **#1 머지 전에는 이 문단이 아직
+  목표 설계이며 코드는 고정 `TODAY` 상태임에 주의.**
 - **주차 판정**: 주 시작 요일(`weekStart` 0=일/1=월) 기준. 과거 `WEEKS_BACK`주 ~ 미래 `WEEKS_FWD`주 창을
   today에 앵커. "완료된 주(finalized)"는 주 마지막날 < today 인 주만(진행 중 주는 통계에서 제외).
 - **상태/영속화**: **현재 인메모리 목업**(`buildInitialRoutines`/`createSeedChecks` 결정적 시드).
@@ -34,7 +37,7 @@
 
 ## 로드맵 단계 메모
 
-- Phase 1: #1 실제 날짜(완료 진행 중) · #2 localStorage 영속화 + 데모 시드 제거
+- Phase 1: #1 실제 날짜(진행 중 · PR #11) · #2 localStorage 영속화 + 데모 시드 제거
 - Phase 2: #3 반응형 전체화면(목업 프레임 제거) · #4 PWA · #5 배포(정적 호스팅 + 자동 배포)
 - Phase 3: #6 알림 · #7 백엔드·계정·클라우드 동기화
 - 상시: #8 테스트·접근성·에러 처리·브랜딩
