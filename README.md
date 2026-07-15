@@ -44,7 +44,7 @@ src/
 design_handoff_routine_tracker/   디자인 핸드오프 스펙 (참고용)
 ```
 
-> 참고: 현재 상태는 인메모리 목업(새로고침 시 초기화)이며, `appLogic.js`의 `TODAY`가
-> 2026-07-15로 고정돼 있다. 시드 데이터는 결정적(`mulberry32`)이라 새로고침해도 동일하게
-> 재현된다. 실제 서비스에는 로컬 저장(localStorage/IndexedDB 등)과 `new Date()` 적용,
-> 알림 스케줄 연동이 필요하다.
+> 참고: 실제 날짜는 `appLogic.js`의 `startOfToday()`(자정 기준 런타임 `new Date()`)로 동작한다
+> — #1 완료로 `TODAY` 고정 상수는 제거됐다. 다만 현재 상태는 아직 인메모리 목업(새로고침 시 초기화)이며,
+> 시드 데이터는 결정적(`mulberry32`)이라 새로고침해도 동일하게 재현된다. 남은 프로덕션 요소:
+> 로컬 저장(localStorage/IndexedDB 등, #2), 알림 스케줄 연동(#6).
