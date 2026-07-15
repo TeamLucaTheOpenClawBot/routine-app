@@ -3,10 +3,10 @@ import {
   PALETTE,
   ICON_KEYS,
   WEEKDAYS,
-  TODAY,
   TOTAL_WEEKS,
   addDays,
   startOfWeek,
+  startOfToday,
   formatDateKey,
   parseDateKey,
   rangeStart,
@@ -85,8 +85,9 @@ function Icon({ name, size = 20, color = '#0EA5A4', strokeWidth = 2 }) {
 let uidCounter = 100;
 
 function App() {
+  const [today, setToday] = useState(() => startOfToday());
   const [routines, setRoutines] = useState(() => buildInitialRoutines());
-  const [checks, setChecks] = useState(() => createSeedChecks(buildInitialRoutines()));
+  const [checks, setChecks] = useState(() => createSeedChecks(buildInitialRoutines(), startOfToday()));
   const [activeTab, setActiveTab] = useState('today');
   const [sheetDay, setSheetDay] = useState(null);
   const [form, setForm] = useState(null); // { mode: 'add'|'edit', id }
@@ -97,8 +98,30 @@ function App() {
 
   const visibleRoutines = useMemo(() => routines.filter((r) => r.visible), [routines]);
   const isEmpty = routines.length === 0;
-  const todayKey = formatDateKey(TODAY);
-  const currentWeekStart = useMemo(() => startOfWeek(TODAY, weekStart), [weekStart]);
+  const todayKey = formatDateKey(today);
+  const currentWeekStart = useMemo(() => startOfWeek(today, weekStart), [today, weekStart]);
+
+  // 앱이 열린 채 날짜가 바뀌면 '오늘'을 갱신 — 자정 타이머 + 포커스/가시성 복귀 시 재계산.
+  useEffect(() => {
+    const refresh = () =>
+      setToday((prev) => {
+        const next = startOfToday();
+        return next.getTime() === prev.getTime() ? prev : next;
+      });
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    const now = new Date();
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const timer = setTimeout(refresh, nextMidnight.getTime() - now.getTime() + 500);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [today]);
 
   // 캘린더 탭 진입 시 오늘 주로 자동 스크롤(레이아웃 안정화 대비 재시도).
   useEffect(() => {
@@ -115,13 +138,13 @@ function App() {
 
   // ---- derived view models ----
   const weeks = useMemo(() => {
-    const start = rangeStart(weekStart);
+    const start = rangeStart(today, weekStart);
     const result = [];
     for (let w = 0; w < TOTAL_WEEKS; w += 1) {
       const ws = addDays(start, w * 7);
       const we = addDays(ws, 6);
-      const finalized = we < TODAY;
-      const isCurrent = ws <= TODAY && TODAY <= we;
+      const finalized = we < today;
+      const isCurrent = ws <= today && today <= we;
       const achievedIds = new Set();
       const chips = [];
       visibleRoutines.forEach((routine) => {
@@ -134,7 +157,7 @@ function App() {
       for (let i = 0; i < 7; i += 1) {
         const date = addDays(ws, i);
         const key = formatDateKey(date);
-        const isFuture = date > TODAY;
+        const isFuture = date > today;
         const icons = isFuture
           ? []
           : visibleRoutines.map((routine) => {
@@ -152,7 +175,7 @@ function App() {
       });
     }
     return result;
-  }, [checks, visibleRoutines, weekStart, todayKey]);
+  }, [checks, visibleRoutines, weekStart, today, todayKey]);
 
   const calStatText = useMemo(() => {
     if (!visibleRoutines.length) return '표시된 루틴이 없어요';
@@ -178,7 +201,7 @@ function App() {
 
   const stats = useMemo(() => {
     const perRoutine = visibleRoutines.map((routine) => {
-      const results = finalizedResults(routine, checks, weekStart);
+      const results = finalizedResults(routine, checks, weekStart, today);
       return {
         routine,
         pct: achievementRate(results),
@@ -200,7 +223,7 @@ function App() {
         { label: '평균 달성률', value: `${avg}%`, accent: '#60A5FA' },
       ],
     };
-  }, [checks, currentWeekStart, visibleRoutines, weekStart]);
+  }, [checks, currentWeekStart, visibleRoutines, weekStart, today]);
 
   const editing = form ? routines.find((r) => r.id === form.id) : null;
 
@@ -290,10 +313,10 @@ function App() {
         <div ref={scrollRef} data-scroll="1" style={{ flex: '1 1 auto', overflowY: 'auto', position: 'relative' }}>
           {isEmpty && <Onboarding onAdd={openAddForm} />}
           {!isEmpty && activeTab === 'calendar' && (
-            <CalendarScreen weeks={weeks} weekStart={weekStart} monthTitle={`${TODAY.getFullYear()}년 ${TODAY.getMonth() + 1}월`} statText={calStatText} onAdd={openAddForm} onOpenDay={setSheetDay} />
+            <CalendarScreen weeks={weeks} weekStart={weekStart} monthTitle={`${today.getFullYear()}년 ${today.getMonth() + 1}월`} statText={calStatText} onAdd={openAddForm} onOpenDay={setSheetDay} />
           )}
           {!isEmpty && activeTab === 'today' && (
-            <TodayScreen rows={todayRows} doneN={todayDone} total={todayRows.length} pct={todayPct} onToggle={(rid) => toggleCheck(todayKey, rid)} />
+            <TodayScreen today={today} rows={todayRows} doneN={todayDone} total={todayRows.length} pct={todayPct} onToggle={(rid) => toggleCheck(todayKey, rid)} />
           )}
           {!isEmpty && activeTab === 'stats' && <StatsScreen summary={stats.summary} rows={stats.perRoutine} />}
           {!isEmpty && activeTab === 'settings' && (
@@ -442,8 +465,8 @@ function CalendarScreen({ weeks, weekStart, monthTitle, statText, onAdd, onOpenD
   );
 }
 
-function TodayScreen({ rows, doneN, total, pct, onToggle }) {
-  const dateLabel = `${TODAY.getMonth() + 1}월 ${TODAY.getDate()}일 ${WEEKDAYS[TODAY.getDay()]}요일`;
+function TodayScreen({ today, rows, doneN, total, pct, onToggle }) {
+  const dateLabel = `${today.getMonth() + 1}월 ${today.getDate()}일 ${WEEKDAYS[today.getDay()]}요일`;
   return (
     <>
       <div style={{ padding: '22px 18px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
