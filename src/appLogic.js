@@ -1,10 +1,10 @@
 // 순수 로직 · 상수 — 뷰(App.jsx)와 분리해 테스트 가능하게 유지.
-// 프로토타입 기준: TODAY 고정(2026-07-15), 인메모리 목업(영속화 없음).
+// '오늘'은 고정 상수가 아니라 런타임 계산값(startOfToday)을 인자로 주입한다 —
+// 순수 함수는 today 인자를 받아 계산하므로 테스트에서 고정 날짜를 넣을 수 있다.
 
 export const PALETTE = ['#0EA5A4', '#16A34A', '#2563EB', '#7C3AED', '#E11D48', '#F59E0B', '#0891B2', '#DB2777'];
 export const ICON_KEYS = ['activity', 'dumbbell', 'beer', 'drop', 'book', 'moon', 'leaf', 'run', 'pencil'];
 export const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-export const TODAY = new Date(2026, 6, 15);
 
 export const WEEKS_BACK = 8;
 export const WEEKS_FWD = 2;
@@ -32,9 +32,16 @@ export function parseDateKey(key) {
   return new Date(y, m - 1, d);
 }
 
-// 캘린더/통계가 다루는 주 범위의 시작(과거 WEEKS_BACK주 전의 주 시작).
-export function rangeStart(weekStart = 0) {
-  return startOfWeek(addDays(TODAY, -WEEKS_BACK * 7), weekStart);
+// 자정 기준 '오늘'(시/분/초 제거). 런타임에서 실제 현재 날짜로 계산한다.
+// 뷰가 이 값을 계산해 순수 함수들(rangeStart/finalizedResults 등)에 주입한다.
+export function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+// 캘린더/통계가 다루는 주 범위의 시작(오늘 기준 과거 WEEKS_BACK주 전의 주 시작).
+export function rangeStart(today, weekStart = 0) {
+  return startOfWeek(addDays(today, -WEEKS_BACK * 7), weekStart);
 }
 
 // 결정적 시드 RNG (Math.random 대신 — 프로토타입과 동일한 데모 데이터 재현).
@@ -89,16 +96,16 @@ export function buildInitialRoutines() {
   ];
 }
 
-export function createSeedChecks(routines) {
+export function createSeedChecks(routines, today) {
   const probs = { r1: 0.82, r2: 0.15, r3: 0.88, r4: 0.5 };
-  const start = rangeStart(0);
+  const start = rangeStart(today, 0);
   const checks = {};
   routines.forEach((routine, index) => {
     const rand = mulberry32(1000 + index * 777);
     const prob = probs[routine.id] ?? 0.6;
     for (let offset = 0; offset < 400; offset += 1) {
       const date = addDays(start, offset);
-      if (!(date < TODAY)) break;
+      if (!(date < today)) break;
       if (rand() < prob) {
         const key = formatDateKey(date);
         (checks[key] || (checks[key] = {}))[routine.id] = true;
@@ -119,13 +126,13 @@ export function makeNewRoutine(routines, id) {
 
 // ---- stats ----
 // 완료된(finalized) 주들의 달성 여부 배열 — 오래된 주가 앞.
-export function finalizedResults(routine, checks, weekStart) {
-  const start = rangeStart(weekStart);
+export function finalizedResults(routine, checks, weekStart, today) {
+  const start = rangeStart(today, weekStart);
   const results = [];
   for (let w = 0; w < TOTAL_WEEKS; w += 1) {
     const ws = addDays(start, w * 7);
     const we = addDays(ws, 6);
-    if (!(we < TODAY)) continue; // 완료된 주만
+    if (!(we < today)) continue; // 완료된 주만
     results.push(achieved(routine, weekCount(ws, routine.id, checks)));
   }
   return results;
