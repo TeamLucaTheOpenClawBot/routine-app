@@ -2,15 +2,25 @@ import { describe, expect, it } from 'vitest';
 import {
   achieved,
   achievementRate,
+  clearState,
   currentStreak,
+  defaultRoutines,
   evaluateWeek,
   finalizedResults,
   formatDateKey,
   goalText,
+  loadState,
   makeNewRoutine,
+  nextRoutineId,
+  parseState,
+  purgeRoutineChecks,
   rangeStart,
+  saveState,
+  serializeState,
   startOfToday,
   startOfWeek,
+  STORAGE_KEY,
+  STORAGE_VERSION,
   weekCount,
 } from './appLogic';
 
@@ -86,6 +96,45 @@ describe('makeNewRoutine', () => {
   });
 });
 
+describe('defaultRoutines', () => {
+  it('seeds 운동·음주 with distinct ids and goal types', () => {
+    const routines = defaultRoutines();
+    expect(routines.map((r) => r.name)).toEqual(['운동', '음주']);
+    expect(routines.map((r) => r.id)).toEqual(['r1', 'r2']);
+    expect(routines.map((r) => r.goalType)).toEqual(['atLeast', 'atMost']);
+  });
+});
+
+describe('nextRoutineId', () => {
+  it('derives an id that cannot collide with existing r<n> ids', () => {
+    expect(nextRoutineId([])).toBe('r1');
+    expect(nextRoutineId(defaultRoutines())).toBe('r3');
+    // 복원된 커스텀 id(r101)가 있어도 그 위로 이어간다 — Codex #13 회귀 방지.
+    expect(nextRoutineId([{ id: 'r2' }, { id: 'r101' }])).toBe('r102');
+    // 비표준 id는 무시.
+    expect(nextRoutineId([{ id: 'abc' }, { id: 'r5' }])).toBe('r6');
+  });
+});
+
+describe('purgeRoutineChecks', () => {
+  it('removes all checks for a routine and drops emptied days', () => {
+    const checks = {
+      '2026-07-15': { r2: true, r3: true },
+      '2026-07-16': { r3: true },
+    };
+    expect(purgeRoutineChecks(checks, 'r3')).toEqual({ '2026-07-15': { r2: true } });
+  });
+
+  it('a recycled id inherits no history after purge (Codex #13 P2)', () => {
+    // r3를 체크 후 삭제 → 같은 세션에서 새 루틴이 r3를 재사용해도 옛 기록이 붙지 않는다.
+    const week = new Date(2026, 6, 12);
+    const checks = { '2026-07-15': { r3: true } };
+    const purged = purgeRoutineChecks(checks, 'r3');
+    expect(nextRoutineId([{ id: 'r1' }, { id: 'r2' }])).toBe('r3'); // id 재활용됨
+    expect(weekCount(week, 'r3', purged)).toBe(0); // 그러나 기록은 없음
+  });
+});
+
 describe('stats helpers', () => {
   it('computes achievement rate and current streak from finalized weeks', () => {
     expect(achievementRate([true, false, true, true])).toBe(75);
@@ -125,5 +174,79 @@ describe('runtime today injection', () => {
     expect(finalizedResults(routine, checks, 0, new Date(2026, 6, 15)).some(Boolean)).toBe(false);
     // 다음 주 일요일이 오늘이면 그 주가 완료됨 → 달성 결과에 반영.
     expect(finalizedResults(routine, checks, 0, new Date(2026, 6, 19)).some(Boolean)).toBe(true);
+  });
+});
+
+describe('persistence (serialize / parse)', () => {
+  const routine = { id: 'r1', name: '운동', iconKey: 'activity', color: '#0EA5A4', goalType: 'atLeast', goalCount: 7, visible: true };
+  const state = { routines: [routine], checks: { '2026-07-15': { r1: true } }, weekStart: 1, notif: false, remindHour: 8 };
+
+  it('round-trips state through serialize → parse with a version field', () => {
+    const raw = serializeState(state);
+    expect(JSON.parse(raw).version).toBe(STORAGE_VERSION);
+    expect(parseState(raw)).toEqual(state);
+  });
+
+  it('returns null on corrupt JSON, empty input, or a version mismatch', () => {
+    expect(parseState('{not json')).toBe(null);
+    expect(parseState('')).toBe(null);
+    expect(parseState(null)).toBe(null);
+    expect(parseState(JSON.stringify({ version: 999, routines: [] }))).toBe(null);
+  });
+
+  it('rejects malformed routines but keeps an empty routine list valid', () => {
+    expect(parseState(JSON.stringify({ version: STORAGE_VERSION, routines: 'nope' }))).toBe(null);
+    expect(parseState(JSON.stringify({ version: STORAGE_VERSION, routines: [{ id: 'r1' }] }))).toBe(null);
+    const empty = parseState(JSON.stringify({ version: STORAGE_VERSION, routines: [] }));
+    expect(empty).toEqual({ routines: [], checks: {}, weekStart: 0, notif: true, remindHour: 21 });
+  });
+
+  it('drops checks for unknown routine ids and non-true values', () => {
+    const raw = JSON.stringify({
+      version: STORAGE_VERSION,
+      routines: [routine],
+      checks: { '2026-07-15': { r1: true, ghost: true, r1x: false } },
+    });
+    expect(parseState(raw).checks).toEqual({ '2026-07-15': { r1: true } });
+  });
+
+  it('falls back to defaults for out-of-range weekStart / notif / remindHour', () => {
+    const raw = JSON.stringify({ version: STORAGE_VERSION, routines: [routine], weekStart: 5, notif: 'yes', remindHour: 99 });
+    const parsed = parseState(raw);
+    expect(parsed.weekStart).toBe(0);
+    expect(parsed.notif).toBe(true);
+    expect(parsed.remindHour).toBe(21);
+  });
+});
+
+describe('persistence (storage wrappers)', () => {
+  // 주입 가능한 인메모리 storage 목 — 실제 localStorage 없이 검증.
+  function memStorage() {
+    const map = new Map();
+    return {
+      getItem: (k) => (map.has(k) ? map.get(k) : null),
+      setItem: (k, v) => map.set(k, String(v)),
+      removeItem: (k) => map.delete(k),
+      _map: map,
+    };
+  }
+  const state = { routines: [{ id: 'r1', name: '운동', iconKey: 'activity', color: '#0EA5A4', goalType: 'atLeast', goalCount: 7, visible: true }], checks: {}, weekStart: 0, notif: true, remindHour: 21 };
+
+  it('save then load round-trips through the storage key', () => {
+    const store = memStorage();
+    saveState(state, store);
+    expect(store._map.has(STORAGE_KEY)).toBe(true);
+    expect(loadState(store)).toEqual(state);
+  });
+
+  it('loadState returns null when nothing is stored', () => {
+    expect(loadState(memStorage())).toBe(null);
+  });
+
+  it('clearState removes the stored entry', () => {
+    const store = memStorage();
+    saveState(state, store);
+    clearState(store);
+    expect(loadState(store)).toBe(null);
   });
 });

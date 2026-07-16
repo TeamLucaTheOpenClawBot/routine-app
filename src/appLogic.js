@@ -44,18 +44,6 @@ export function rangeStart(today, weekStart = 0) {
   return startOfWeek(addDays(today, -WEEKS_BACK * 7), weekStart);
 }
 
-// 결정적 시드 RNG (Math.random 대신 — 프로토타입과 동일한 데모 데이터 재현).
-export function mulberry32(seed) {
-  let a = seed;
-  return function next() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 // ---- goal / weekly evaluation ----
 export function goalText(routine) {
   return routine.goalType === 'atLeast'
@@ -84,35 +72,22 @@ export function evaluateWeek(routine, checks, weekStart) {
   return achieved(routine, weekCount(weekStart, routine.id, checks));
 }
 
-// ---- seed / initial state ----
-export function buildInitialRoutines() {
-  // 실제 기본은 운동·음주 2개면 충분하지만, 밀도 데모를 위해 물·독서를 포함한
-  // 프로토타입 시드를 사용한다.
+// 첫 방문(저장 데이터 없음) 기본 루틴 — 운동(늘리기)·음주(줄이기) 2개.
+export function defaultRoutines() {
   return [
     { id: 'r1', name: '운동', iconKey: 'activity', color: '#0EA5A4', goalType: 'atLeast', goalCount: 7, visible: true },
     { id: 'r2', name: '음주', iconKey: 'beer', color: '#E11D48', goalType: 'atMost', goalCount: 1, visible: true },
-    { id: 'r3', name: '물 마시기', iconKey: 'drop', color: '#2563EB', goalType: 'atLeast', goalCount: 7, visible: true },
-    { id: 'r4', name: '독서', iconKey: 'book', color: '#7C3AED', goalType: 'atLeast', goalCount: 3, visible: true },
   ];
 }
 
-export function createSeedChecks(routines, today) {
-  const probs = { r1: 0.82, r2: 0.15, r3: 0.88, r4: 0.5 };
-  const start = rangeStart(today, 0);
-  const checks = {};
-  routines.forEach((routine, index) => {
-    const rand = mulberry32(1000 + index * 777);
-    const prob = probs[routine.id] ?? 0.6;
-    for (let offset = 0; offset < 400; offset += 1) {
-      const date = addDays(start, offset);
-      if (!(date < today)) break;
-      if (rand() < prob) {
-        const key = formatDateKey(date);
-        (checks[key] || (checks[key] = {}))[routine.id] = true;
-      }
-    }
-  });
-  return checks;
+// 기존 r<n> id와 절대 충돌하지 않는 다음 루틴 id. 라이브 목록에서 매번 파생하므로
+// 영속화 복원 후 모듈 카운터가 리셋돼도 안전(비표준 id는 무시).
+export function nextRoutineId(routines) {
+  const max = routines.reduce((m, r) => {
+    const match = /^r(\d+)$/.exec(r.id);
+    return match ? Math.max(m, Number(match[1])) : m;
+  }, 0);
+  return `r${max + 1}`;
 }
 
 // 다음 새 루틴의 기본값(미사용 색/아이콘 우선).
@@ -122,6 +97,20 @@ export function makeNewRoutine(routines, id) {
   const usedIcons = new Set(routines.map((r) => r.iconKey));
   const iconKey = ICON_KEYS.find((k) => !usedIcons.has(k)) || 'leaf';
   return { id, name: '새 루틴', iconKey, color, goalType: 'atLeast', goalCount: 3, visible: true };
+}
+
+// 특정 루틴의 모든 체크를 제거(빈 날짜는 삭제). 루틴 삭제 시 고아 체크가 남으면
+// nextRoutineId가 그 id를 재활용할 때 옛 기록이 새 루틴에 붙으므로, 삭제 시 함께 정리한다.
+export function purgeRoutineChecks(checks, routineId) {
+  const out = {};
+  for (const [key, day] of Object.entries(checks)) {
+    const kept = {};
+    for (const [rid, value] of Object.entries(day)) {
+      if (rid !== routineId) kept[rid] = value;
+    }
+    if (Object.keys(kept).length) out[key] = kept;
+  }
+  return out;
 }
 
 // ---- stats ----
@@ -151,4 +140,118 @@ export function currentStreak(results) {
     else break;
   }
   return streak;
+}
+
+// ---- persistence (localStorage) ----
+// 상태를 localStorage에 저장/복원. 스키마에 version을 포함해 향후 마이그레이션 여지를 둔다.
+// 파싱/검증 로직은 순수 함수(serializeState/parseState)로 두어 테스트 가능하게 하고,
+// 실제 저장소 접근(load/save/clear)은 그 위의 얇은 래퍼로 감싼다.
+export const STORAGE_KEY = 'routine-app:v1';
+export const STORAGE_VERSION = 1;
+
+const GOAL_TYPES = new Set(['atLeast', 'atMost']);
+
+export function serializeState(state) {
+  return JSON.stringify({
+    version: STORAGE_VERSION,
+    routines: state.routines,
+    checks: state.checks,
+    weekStart: state.weekStart,
+    notif: state.notif,
+    remindHour: state.remindHour,
+  });
+}
+
+// 저장된 루틴 배열을 방어적으로 정규화. 형태가 어긋나면 null(→ 전체 폴백).
+function sanitizeRoutines(input) {
+  if (!Array.isArray(input)) return null;
+  const out = [];
+  for (const r of input) {
+    if (!r || typeof r !== 'object') return null;
+    if (typeof r.id !== 'string' || typeof r.name !== 'string') return null;
+    if (!GOAL_TYPES.has(r.goalType) || !Number.isFinite(r.goalCount)) return null;
+    out.push({
+      id: r.id,
+      name: r.name,
+      iconKey: typeof r.iconKey === 'string' ? r.iconKey : 'leaf',
+      color: typeof r.color === 'string' ? r.color : PALETTE[0],
+      goalType: r.goalType,
+      goalCount: r.goalCount,
+      visible: r.visible !== false,
+    });
+  }
+  return out;
+}
+
+// checks를 { dateKey: { routineId: true } } 형태로 정규화. 존재하지 않는 루틴 id는 버린다.
+function sanitizeChecks(input, validIds) {
+  if (!input || typeof input !== 'object') return {};
+  const out = {};
+  for (const [key, day] of Object.entries(input)) {
+    if (!day || typeof day !== 'object') continue;
+    const kept = {};
+    for (const [routineId, value] of Object.entries(day)) {
+      if (value === true && validIds.has(routineId)) kept[routineId] = true;
+    }
+    if (Object.keys(kept).length) out[key] = kept;
+  }
+  return out;
+}
+
+// 저장 문자열 → 검증된 상태. 손상/구버전/형태 불일치면 null을 돌려 뷰가 기본값으로 폴백하게 한다.
+export function parseState(raw) {
+  if (!raw) return null;
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== 'object' || data.version !== STORAGE_VERSION) return null;
+  const routines = sanitizeRoutines(data.routines);
+  if (!routines) return null;
+  const ids = new Set(routines.map((r) => r.id));
+  return {
+    routines,
+    checks: sanitizeChecks(data.checks, ids),
+    weekStart: data.weekStart === 1 ? 1 : 0,
+    notif: typeof data.notif === 'boolean' ? data.notif : true,
+    remindHour: Number.isInteger(data.remindHour) && data.remindHour >= 0 && data.remindHour <= 23 ? data.remindHour : 21,
+  };
+}
+
+// SSR/프라이빗 모드/차단 등에서 localStorage 접근이 던질 수 있어 방어한다.
+function safeStorage() {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadState(storage = safeStorage()) {
+  if (!storage) return null;
+  try {
+    return parseState(storage.getItem(STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+export function saveState(state, storage = safeStorage()) {
+  if (!storage) return;
+  try {
+    storage.setItem(STORAGE_KEY, serializeState(state));
+  } catch {
+    /* 용량 초과 등 저장 실패는 조용히 무시 */
+  }
+}
+
+export function clearState(storage = safeStorage()) {
+  if (!storage) return;
+  try {
+    storage.removeItem(STORAGE_KEY);
+  } catch {
+    /* noop */
+  }
 }
