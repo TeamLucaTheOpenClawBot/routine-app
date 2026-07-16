@@ -62,9 +62,8 @@
   풀블리드가 되도록 `pwa-512x512.png`로 덮어쓴다. SW 등록은 플러그인이 자동 주입.
 - **배포**(#5): Docker 이미지(nginx가 `dist/` 서빙 — PWA 캐시 규칙은 `deploy/nginx.conf`:
   sw/index/manifest no-cache · `/assets` 불변). main 머지 시 `.github/workflows/deploy.yml`이
-  이미지 빌드(**multi-arch** — 서버가 Oracle Ampere aarch64)→컨테이너 스모크→GHCR publish(private)
-  →**CI가 서버로 SSH 배포**: 1회용 GITHUB_TOKEN으로 pull 후 즉시 logout(서버에 영구 자격증명 없음,
-  시크릿 `DEPLOY_HOST/USER/SSH_KEY`). PR에선 빌드+스모크만. 외부 노출은 Cloudflare Tunnel
+  이미지 빌드→컨테이너 스모크 테스트→GHCR publish(PR에선 빌드+스모크만). Oracle VM에서
+  watchtower(label-enable)가 자동 반영, 외부 노출은 Cloudflare Tunnel
   (`routine.chillingdaisy.org` → `localhost:8080`, 공인 포트 개방 없음). 서버 절차 `deploy/README.md`.
 
 ## 로드맵 단계 메모
