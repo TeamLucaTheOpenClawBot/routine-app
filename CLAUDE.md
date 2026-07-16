@@ -62,15 +62,16 @@
   풀블리드가 되도록 `pwa-512x512.png`로 덮어쓴다. SW 등록은 플러그인이 자동 주입.
 - **배포**(#5): Docker 이미지(nginx가 `dist/` 서빙 — PWA 캐시 규칙은 `deploy/nginx.conf`:
   sw/index/manifest no-cache · `/assets` 불변). main 머지 시 `.github/workflows/deploy.yml`이
-  이미지 빌드→컨테이너 스모크 테스트→GHCR publish(PR에선 빌드+스모크만). Oracle VM에서
-  watchtower(label-enable)가 자동 반영, 외부 노출은 Cloudflare Tunnel
+  이미지 빌드(**multi-arch** — 서버가 Oracle Ampere aarch64)→컨테이너 스모크→GHCR publish(private)
+  →**CI가 서버로 SSH 배포**: 1회용 GITHUB_TOKEN으로 pull 후 즉시 logout(서버에 영구 자격증명 없음,
+  시크릿 `DEPLOY_HOST/USER/SSH_KEY`). PR에선 빌드+스모크만. 외부 노출은 Cloudflare Tunnel
   (`routine.chillingdaisy.org` → `localhost:8080`, 공인 포트 개방 없음). 서버 절차 `deploy/README.md`.
 
 ## 로드맵 단계 메모
 
 - Phase 1: ~~#1 실제 날짜~~(완료 · PR #11) · ~~#2 localStorage 영속화 + 데모 시드 제거~~(완료 · PR #13)
 - Phase 2: ~~#3 반응형 전체화면(목업 프레임 제거)~~(완료) · ~~#4 PWA~~(완료) · ~~#5 배포~~(레포 측 완료 —
-  CI→GHCR→watchtower·터널, **서버 1회 세팅 남음**: `deploy/README.md`)
+  CI 빌드→GHCR(private)→CI SSH push 배포·Cloudflare 터널, 서버 세팅·검증 절차는 `deploy/README.md`)
 - 백로그: **다음 → #16** 루틴별 찬스 시스템(주/월 리필·기타찬스·체크 3-상태) — 저장 스키마 v2가
   #7 동기화 설계에 영향을 주므로 백엔드 전에 확정
 - Phase 3: #7 백엔드·계정·클라우드 동기화 · #6 알림
