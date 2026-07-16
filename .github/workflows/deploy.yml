@@ -98,17 +98,20 @@ jobs:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           HOST: ${{ secrets.DEPLOY_HOST }}
           SSH_USER: ${{ secrets.DEPLOY_USER }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACTOR: ${{ github.actor }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # 호스트 키 핀닝: keyscan(그 순간의 키를 무조건 신뢰) 대신 시크릿에 고정한 서버
+          # 정본 키만 신뢰한다 — DNS/경로 스푸핑·키 교체 시 토큰 전송 전에 접속이 실패한다.
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           # 토큰은 argv에 노출하지 않고 stdin → docker login --password-stdin 으로만 전달.
           # trap: pull/up이 실패해도 logout이 반드시 실행돼 자격증명이 서버에 남지 않는다.
           # --remove-orphans: compose에서 제거된 서비스(구 watchtower 등)를 함께 정리.
-          echo "$TOKEN" | ssh -i ~/.ssh/deploy_key "$SSH_USER@$HOST" \
+          echo "$TOKEN" | ssh -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key "$SSH_USER@$HOST" \
             "set -e; trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT; \
              docker login ghcr.io -u '$ACTOR' --password-stdin; \
              cd /opt/routine-app; \

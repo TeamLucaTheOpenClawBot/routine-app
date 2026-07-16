@@ -14,10 +14,13 @@ main 머지 → GitHub Actions: 이미지 빌드(multi-arch)·스모크 → GHCR
 
 ## 배포 자격 (설정 완료)
 
-- repo Actions 시크릿: `DEPLOY_HOST` · `DEPLOY_USER` · `DEPLOY_SSH_KEY`
+- repo Actions 시크릿: `DEPLOY_HOST` · `DEPLOY_USER` · `DEPLOY_SSH_KEY` · `DEPLOY_KNOWN_HOSTS`
 - `DEPLOY_SSH_KEY`는 **배포 전용 ed25519 키**(관리용 키와 별개). 서버 `authorized_keys`에
   `no-port-forwarding,no-agent-forwarding,no-X11-forwarding` 제한과 함께 등록됨.
+- `DEPLOY_KNOWN_HOSTS`는 서버 정본 호스트 키(`/etc/ssh/ssh_host_ed25519_key.pub`) 핀닝 —
+  keyscan(TOFU) 대신 이 키만 신뢰하므로 스푸핑 시 토큰 전송 전에 접속이 실패한다.
 - 키 회전: 새 키 생성 → 서버 authorized_keys 교체 → `gh secret set DEPLOY_SSH_KEY` 갱신.
+  서버 호스트 키 재설치 시엔 `DEPLOY_KNOWN_HOSTS`도 갱신.
 
 ## 서버 1회 세팅 (완료)
 
