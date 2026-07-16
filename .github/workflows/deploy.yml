@@ -85,6 +85,10 @@ jobs:
     needs: docker
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # 서버로 넘기는 GITHUB_TOKEN은 pull만 하면 되므로 잡 레벨에서 read로 강등(최소권한).
+    permissions:
+      contents: read
+      packages: read
     concurrency:
       group: deploy-server
       cancel-in-progress: false
