@@ -25,17 +25,21 @@
 - **로직/뷰 분리**: `src/appLogic.js`는 순수 함수·상수(뷰 의존 없음, 테스트 대상), `src/App.jsx`는 렌더링.
   새 파생 계산은 App의 `useMemo`가 아니라 appLogic의 순수 함수로 빼고 테스트를 동봉한다.
 - **'오늘'은 주입값**(#1 완료): 고정 상수 아님. `appLogic.js`가 `startOfToday()`(자정 기준 런타임
-  `new Date()`)를 제공하고 `rangeStart`/`finalizedResults`/`createSeedChecks`는 `today`를 인자로 받는다.
+  `new Date()`)를 제공하고 `rangeStart`/`finalizedResults` 등은 `today`를 인자로 받는다.
   App이 `today`를 상태로 계산해 이들에 주입 → 테스트는 고정 날짜를 주입해 결정적으로 검증하고, 앱은 자정
   타이머·포커스/가시성 복귀 시 today를 갱신한다. **`TODAY` 고정 상수·import는 남기지 않는다.**
 - **주차 판정**: 주 시작 요일(`weekStart` 0=일/1=월) 기준. 과거 `WEEKS_BACK`주 ~ 미래 `WEEKS_FWD`주 창을
   today에 앵커. "완료된 주(finalized)"는 주 마지막날 < today 인 주만(진행 중 주는 통계에서 제외).
-- **상태/영속화**: **현재 인메모리 목업**(`buildInitialRoutines`/`createSeedChecks` 결정적 시드).
-  localStorage 영속화·데모 시드 제거는 **#2에서** 도입 예정 — 그 전까지 새로고침 시 데이터 초기화가 정상.
+- **상태/영속화**(#2 완료): `localStorage`에 영속화한다. `appLogic.js`의 순수 함수
+  `serializeState`/`parseState`(스키마 `version` 필드 + 손상·구버전 방어)로 직렬화/검증하고,
+  얇은 래퍼 `loadState`/`saveState`/`clearState`(SSR·프라이빗 모드 방어, storage 주입 가능)가
+  실제 저장소를 만진다. App은 초기 1회 로드 → `useEffect`로 변경 시 동기화한다. 저장 키 `routine-app:v1`.
+  **첫 방문은 데모 시드 없이 빈 상태 → 온보딩**(`buildInitialRoutines`/`createSeedChecks` 제거됨).
+  설정의 "데이터 초기화"로 전체를 지우고 온보딩으로 되돌린다.
 
 ## 로드맵 단계 메모
 
-- Phase 1: ~~#1 실제 날짜~~(완료 · PR #11) · **다음 → #2** localStorage 영속화 + 데모 시드 제거
+- Phase 1: ~~#1 실제 날짜~~(완료 · PR #11) · ~~#2 localStorage 영속화 + 데모 시드 제거~~(완료) · **다음 → #3**
 - Phase 2: #3 반응형 전체화면(목업 프레임 제거) · #4 PWA · #5 배포(정적 호스팅 + 자동 배포)
 - Phase 3: #6 알림 · #7 백엔드·계정·클라우드 동기화
 - 상시: #8 테스트·접근성·에러 처리·브랜딩

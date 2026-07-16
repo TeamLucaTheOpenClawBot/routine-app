@@ -2,15 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   achieved,
   achievementRate,
+  clearState,
   currentStreak,
   evaluateWeek,
   finalizedResults,
   formatDateKey,
   goalText,
+  loadState,
   makeNewRoutine,
+  parseState,
   rangeStart,
+  saveState,
+  serializeState,
   startOfToday,
   startOfWeek,
+  STORAGE_KEY,
+  STORAGE_VERSION,
   weekCount,
 } from './appLogic';
 
@@ -125,5 +132,79 @@ describe('runtime today injection', () => {
     expect(finalizedResults(routine, checks, 0, new Date(2026, 6, 15)).some(Boolean)).toBe(false);
     // 다음 주 일요일이 오늘이면 그 주가 완료됨 → 달성 결과에 반영.
     expect(finalizedResults(routine, checks, 0, new Date(2026, 6, 19)).some(Boolean)).toBe(true);
+  });
+});
+
+describe('persistence (serialize / parse)', () => {
+  const routine = { id: 'r1', name: '운동', iconKey: 'activity', color: '#0EA5A4', goalType: 'atLeast', goalCount: 7, visible: true };
+  const state = { routines: [routine], checks: { '2026-07-15': { r1: true } }, weekStart: 1, notif: false, remindHour: 8 };
+
+  it('round-trips state through serialize → parse with a version field', () => {
+    const raw = serializeState(state);
+    expect(JSON.parse(raw).version).toBe(STORAGE_VERSION);
+    expect(parseState(raw)).toEqual(state);
+  });
+
+  it('returns null on corrupt JSON, empty input, or a version mismatch', () => {
+    expect(parseState('{not json')).toBe(null);
+    expect(parseState('')).toBe(null);
+    expect(parseState(null)).toBe(null);
+    expect(parseState(JSON.stringify({ version: 999, routines: [] }))).toBe(null);
+  });
+
+  it('rejects malformed routines but keeps an empty routine list valid', () => {
+    expect(parseState(JSON.stringify({ version: STORAGE_VERSION, routines: 'nope' }))).toBe(null);
+    expect(parseState(JSON.stringify({ version: STORAGE_VERSION, routines: [{ id: 'r1' }] }))).toBe(null);
+    const empty = parseState(JSON.stringify({ version: STORAGE_VERSION, routines: [] }));
+    expect(empty).toEqual({ routines: [], checks: {}, weekStart: 0, notif: true, remindHour: 21 });
+  });
+
+  it('drops checks for unknown routine ids and non-true values', () => {
+    const raw = JSON.stringify({
+      version: STORAGE_VERSION,
+      routines: [routine],
+      checks: { '2026-07-15': { r1: true, ghost: true, r1x: false } },
+    });
+    expect(parseState(raw).checks).toEqual({ '2026-07-15': { r1: true } });
+  });
+
+  it('falls back to defaults for out-of-range weekStart / notif / remindHour', () => {
+    const raw = JSON.stringify({ version: STORAGE_VERSION, routines: [routine], weekStart: 5, notif: 'yes', remindHour: 99 });
+    const parsed = parseState(raw);
+    expect(parsed.weekStart).toBe(0);
+    expect(parsed.notif).toBe(true);
+    expect(parsed.remindHour).toBe(21);
+  });
+});
+
+describe('persistence (storage wrappers)', () => {
+  // 주입 가능한 인메모리 storage 목 — 실제 localStorage 없이 검증.
+  function memStorage() {
+    const map = new Map();
+    return {
+      getItem: (k) => (map.has(k) ? map.get(k) : null),
+      setItem: (k, v) => map.set(k, String(v)),
+      removeItem: (k) => map.delete(k),
+      _map: map,
+    };
+  }
+  const state = { routines: [{ id: 'r1', name: '운동', iconKey: 'activity', color: '#0EA5A4', goalType: 'atLeast', goalCount: 7, visible: true }], checks: {}, weekStart: 0, notif: true, remindHour: 21 };
+
+  it('save then load round-trips through the storage key', () => {
+    const store = memStorage();
+    saveState(state, store);
+    expect(store._map.has(STORAGE_KEY)).toBe(true);
+    expect(loadState(store)).toEqual(state);
+  });
+
+  it('loadState returns null when nothing is stored', () => {
+    expect(loadState(memStorage())).toBe(null);
+  });
+
+  it('clearState removes the stored entry', () => {
+    const store = memStorage();
+    saveState(state, store);
+    clearState(store);
+    expect(loadState(store)).toBe(null);
   });
 });

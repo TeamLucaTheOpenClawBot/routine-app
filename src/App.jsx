@@ -13,12 +13,13 @@ import {
   weekCount,
   achieved,
   goalText,
-  buildInitialRoutines,
-  createSeedChecks,
   makeNewRoutine,
   finalizedResults,
   achievementRate,
   currentStreak,
+  loadState,
+  saveState,
+  clearState,
 } from './appLogic';
 
 // 단색 라인 아이콘(24×24, stroke). 루틴용 + UI용.
@@ -85,16 +86,23 @@ function Icon({ name, size = 20, color = '#0EA5A4', strokeWidth = 2 }) {
 let uidCounter = 100;
 
 function App() {
+  // 새로고침 시 복원. 저장 데이터가 없으면(첫 방문) 빈 상태 → 온보딩.
+  const [persisted] = useState(loadState);
   const [today, setToday] = useState(() => startOfToday());
-  const [routines, setRoutines] = useState(() => buildInitialRoutines());
-  const [checks, setChecks] = useState(() => createSeedChecks(buildInitialRoutines(), startOfToday()));
+  const [routines, setRoutines] = useState(() => persisted?.routines ?? []);
+  const [checks, setChecks] = useState(() => persisted?.checks ?? {});
   const [activeTab, setActiveTab] = useState('today');
   const [sheetDay, setSheetDay] = useState(null);
   const [form, setForm] = useState(null); // { mode: 'add'|'edit', id }
-  const [notif, setNotif] = useState(true);
-  const [remindHour] = useState(21);
-  const [weekStart, setWeekStart] = useState(0);
+  const [notif, setNotif] = useState(() => persisted?.notif ?? true);
+  const [remindHour] = useState(() => persisted?.remindHour ?? 21);
+  const [weekStart, setWeekStart] = useState(() => persisted?.weekStart ?? 0);
   const scrollRef = useRef(null);
+
+  // 상태 변경 시 localStorage에 동기화(오늘/탭 등 뷰 전용 상태는 저장하지 않는다).
+  useEffect(() => {
+    saveState({ routines, checks, weekStart, notif, remindHour });
+  }, [routines, checks, weekStart, notif, remindHour]);
 
   const visibleRoutines = useMemo(() => routines.filter((r) => r.visible), [routines]);
   const isEmpty = routines.length === 0;
@@ -294,6 +302,19 @@ function App() {
     setSheetDay(null);
   };
 
+  // 모든 루틴·기록을 지우고 첫 방문 상태(온보딩)로 되돌린다.
+  const resetAll = () => {
+    if (typeof window !== 'undefined' && !window.confirm('모든 루틴과 기록을 삭제할까요? 되돌릴 수 없어요.')) return;
+    clearState();
+    setRoutines([]);
+    setChecks({});
+    setWeekStart(0);
+    setNotif(true);
+    setForm(null);
+    setSheetDay(null);
+    setActiveTab('today');
+  };
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 20px 64px', background: '#070B14' }}>
       <div style={{ width: 390, height: 844, background: 'var(--color-bg)', borderRadius: 44, border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column', fontFamily: 'var(--font-sans)', color: 'var(--color-text)' }}>
@@ -330,6 +351,7 @@ function App() {
               onToggleNotif={() => setNotif((v) => !v)}
               weekStart={weekStart}
               onSetWeekStart={setWeekStart}
+              onReset={resetAll}
             />
           )}
         </div>
@@ -551,7 +573,7 @@ function StatsScreen({ summary, rows }) {
   );
 }
 
-function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remindHour, onToggleNotif, weekStart, onSetWeekStart }) {
+function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remindHour, onToggleNotif, weekStart, onSetWeekStart, onReset }) {
   const full = routines.length >= 5;
   const seg = (on) => ({ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: on ? 800 : 700, cursor: 'pointer', background: on ? 'var(--color-primary)' : 'transparent', color: on ? '#fff' : 'var(--color-muted)' });
   const sectionLabel = { fontSize: 12, fontWeight: 800, color: 'var(--color-muted)', letterSpacing: '0.04em', padding: '0 4px 8px' };
@@ -609,6 +631,18 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
               <button type="button" onClick={() => onSetWeekStart(0)} style={seg(weekStart === 0)}>일요일</button>
               <button type="button" onClick={() => onSetWeekStart(1)} style={seg(weekStart === 1)}>월요일</button>
             </div>
+          </div>
+        </div>
+
+        {/* 데이터 */}
+        <div>
+          <div style={sectionLabel}>데이터</div>
+          <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: '14px 15px', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>데이터 초기화</div>
+              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 2 }}>모든 루틴과 기록을 삭제해요</div>
+            </div>
+            <button type="button" onClick={onReset} style={{ cursor: 'pointer', flex: '0 0 auto', padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 800, background: 'var(--color-expired-bg)', color: 'var(--color-expired-text)' }}>초기화</button>
           </div>
         </div>
       </div>
