@@ -317,23 +317,12 @@ function App() {
     setActiveTab('today');
   };
 
+  // 데스크톱에선 480px 컬럼을 중앙 정렬, 모바일에선 뷰포트를 꽉 채운다(목업 프레임·가짜 상태바 제거).
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 20px 64px', background: '#070B14' }}>
-      <div style={{ width: 390, height: 844, background: 'var(--color-bg)', borderRadius: 44, border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column', fontFamily: 'var(--font-sans)', color: 'var(--color-text)' }}>
-        {/* status bar */}
-        <div style={{ height: 44, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 26px', fontSize: 13, fontWeight: 700, background: 'var(--color-surface)' }}>
-          <span>9:41</span>
-          <span style={{ display: 'flex', gap: 7, alignItems: 'center', fontSize: 12, fontWeight: 800 }}>
-            <span>5G</span>
-            <span style={{ display: 'inline-block', width: 23, height: 12, border: '1.5px solid var(--color-text)', borderRadius: 3, position: 'relative' }}>
-              <span style={{ position: 'absolute', top: 1.5, bottom: 1.5, left: 1.5, right: 6, background: 'var(--color-text)', borderRadius: 1 }} />
-              <span style={{ position: 'absolute', top: 3.5, bottom: 3.5, right: -2.5, width: 2, background: 'var(--color-text)', borderRadius: 1 }} />
-            </span>
-          </span>
-        </div>
-
+    <div style={{ minHeight: '100dvh', display: 'flex', justifyContent: 'center', background: '#070B14' }}>
+      <div style={{ width: '100%', maxWidth: 480, height: '100dvh', background: 'var(--color-bg)', overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column', fontFamily: 'var(--font-sans)', color: 'var(--color-text)', paddingTop: 'env(safe-area-inset-top)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
         {/* content */}
-        <div ref={scrollRef} data-scroll="1" style={{ flex: '1 1 auto', overflowY: 'auto', position: 'relative' }}>
+        <div ref={scrollRef} data-scroll="1" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', position: 'relative' }}>
           {isEmpty && <Onboarding onAdd={openAddForm} />}
           {!isEmpty && activeTab === 'calendar' && (
             <CalendarScreen weeks={weeks} weekStart={weekStart} monthTitle={`${today.getFullYear()}년 ${today.getMonth() + 1}월`} statText={calStatText} onAdd={openAddForm} onOpenDay={setSheetDay} />
@@ -359,7 +348,7 @@ function App() {
         </div>
 
         {/* tab bar */}
-        <div style={{ flex: '0 0 auto', display: 'flex', background: 'var(--color-surface)', borderTop: '1px solid var(--color-border)', padding: '8px 6px 14px' }}>
+        <div style={{ flex: '0 0 auto', display: 'flex', background: 'var(--color-surface)', borderTop: '1px solid var(--color-border)', padding: '8px 6px', paddingBottom: 'calc(14px + env(safe-area-inset-bottom))' }}>
           {TABS.map((tab) => {
             const on = tab.key === activeTab;
             return (
@@ -657,7 +646,7 @@ function CheckSheet({ dayKey, routines, checks, onToggle, onClose }) {
   return (
     <>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(15, 23, 42, 0.34)', zIndex: 25 }} />
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: 'var(--color-surface)', borderTopLeftRadius: 26, borderTopRightRadius: 26, boxShadow: 'var(--shadow-lg)', zIndex: 30, padding: '10px 18px 22px', display: 'flex', flexDirection: 'column', maxHeight: '84%' }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: 'var(--color-surface)', borderTopLeftRadius: 26, borderTopRightRadius: 26, boxShadow: 'var(--shadow-lg)', zIndex: 30, padding: '10px calc(18px + env(safe-area-inset-right)) calc(22px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left))', display: 'flex', flexDirection: 'column', maxHeight: '84%' }}>
         <div style={{ width: 40, height: 4, borderRadius: 999, background: 'var(--color-border)', margin: '2px auto 12px' }} />
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
           <div>
@@ -695,14 +684,15 @@ function RoutineForm({ routine, mode, canDelete, onCancel, onSave, onUpdate, onS
   const stepBase = { width: 40, height: 40, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', fontSize: 22, fontWeight: 800 };
   const stepStyle = (enabled) => ({ ...stepBase, color: enabled ? 'var(--color-text)' : 'var(--color-field-border)', cursor: enabled ? 'pointer' : 'default' });
   const label = { fontSize: 12.5, fontWeight: 800, color: 'var(--color-muted)', letterSpacing: '0.03em', marginBottom: 10 };
+  // inset:0 오버레이는 셸의 safe-area padding을 벗어나므로(padding-box 기준) 자체 인셋을 둔다. 하단은 스크롤 본문 padding이 처리.
   return (
-    <div style={{ position: 'absolute', inset: 0, background: 'var(--color-surface)', zIndex: 40, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ position: 'absolute', inset: 0, background: 'var(--color-surface)', zIndex: 40, display: 'flex', flexDirection: 'column', paddingTop: 'env(safe-area-inset-top)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
       <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px 12px', borderBottom: '1px solid var(--color-border)' }}>
         <button type="button" onClick={onCancel} style={{ cursor: 'pointer', fontSize: 15, fontWeight: 700, color: 'var(--color-muted)' }}>취소</button>
         <div style={{ fontSize: 16.5, fontWeight: 800 }}>{mode === 'add' ? '루틴 추가' : '루틴 편집'}</div>
         <button type="button" onClick={onSave} style={{ cursor: 'pointer', fontSize: 15, fontWeight: 800, color: 'var(--color-primary)' }}>저장</button>
       </div>
-      <div data-scroll="1" style={{ flex: '1 1 auto', overflowY: 'auto', padding: '22px 18px 24px' }}>
+      <div data-scroll="1" style={{ flex: '1 1 auto', overflowY: 'auto', padding: '22px 18px calc(24px + env(safe-area-inset-bottom))' }}>
         <div style={{ width: 76, height: 76, borderRadius: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: rgba(routine.color, 0.15), margin: '0 auto' }}>
           <Icon name={routine.iconKey} size={40} color={routine.color} strokeWidth={2} />
         </div>
