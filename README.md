@@ -27,14 +27,22 @@ React 18 + Vite로 구현. 디자인은 [`design_handoff_routine_tracker/`](desi
 
 ```bash
 npm install     # 최초 1회
-npm run dev     # 개발 서버
+npm run dev     # 개발 서버 (SW 비활성)
 npm test        # 단위 테스트 (vitest)
-npm run build   # 프로덕션 빌드 → dist/
+npm run build   # 프로덕션 빌드 → dist/ (PWA 서비스워커·매니페스트 포함)
+npm run preview # 빌드본 미리보기 (SW·오프라인 검증은 여기서)
 ```
+
+## PWA (홈 화면 설치 · 오프라인)
+
+`vite-plugin-pwa`로 빌드 시 서비스워커(`sw.js`)와 매니페스트(`manifest.webmanifest`)를 생성한다.
+앱 셸을 precache + `navigateFallback`으로 **오프라인에서도 로드**되고, 모바일에서 **"홈 화면에 추가"**로
+독립 실행(standalone)된다. 브랜드 아이콘(틸 체크)은 `public/`에 192/512/maskable/apple-touch로 제공.
+SW·오프라인은 빌드본에서만 동작하므로 `npm run preview`로 검증한다.
 
 ## 구조
 
-```
+```text
 src/
   App.jsx          앱 셸 · 탭바 · 4개 화면 · 체크 시트 · 편집 폼 · 온보딩
   appLogic.js      데이터 모델 · 주간 판정 · 통계 · localStorage 영속화 (순수 로직)
@@ -42,6 +50,8 @@ src/
   App.test.jsx     App 구동 · 영속화 통합 테스트
   index.css        다크 테마 디자인 토큰 · 전역 스타일
   main.jsx         엔트리
+public/            PWA 아이콘(logo.svg 소스 · pwa-*/maskable/apple-touch/favicon)
+vite.config.js     Vite · vitest · vite-plugin-pwa(매니페스트·SW) 설정
 design_handoff_routine_tracker/   디자인 핸드오프 스펙 (참고용)
 ```
 
