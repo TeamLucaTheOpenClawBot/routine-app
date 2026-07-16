@@ -99,6 +99,20 @@ export function makeNewRoutine(routines, id) {
   return { id, name: '새 루틴', iconKey, color, goalType: 'atLeast', goalCount: 3, visible: true };
 }
 
+// 특정 루틴의 모든 체크를 제거(빈 날짜는 삭제). 루틴 삭제 시 고아 체크가 남으면
+// nextRoutineId가 그 id를 재활용할 때 옛 기록이 새 루틴에 붙으므로, 삭제 시 함께 정리한다.
+export function purgeRoutineChecks(checks, routineId) {
+  const out = {};
+  for (const [key, day] of Object.entries(checks)) {
+    const kept = {};
+    for (const [rid, value] of Object.entries(day)) {
+      if (rid !== routineId) kept[rid] = value;
+    }
+    if (Object.keys(kept).length) out[key] = kept;
+  }
+  return out;
+}
+
 // ---- stats ----
 // 완료된(finalized) 주들의 달성 여부 배열 — 오래된 주가 앞.
 export function finalizedResults(routine, checks, weekStart, today) {

@@ -16,6 +16,7 @@ import {
   defaultRoutines,
   makeNewRoutine,
   nextRoutineId,
+  purgeRoutineChecks,
   finalizedResults,
   achievementRate,
   currentStreak,
@@ -293,6 +294,8 @@ function App() {
   const deleteRoutine = (routineId) => {
     if (routines.length <= 1) return;
     setRoutines((prev) => prev.filter((r) => r.id !== routineId));
+    // 체크도 함께 정리 — 고아 기록이 남아 재활용된 id로 새 루틴에 붙는 것을 막는다.
+    setChecks((prev) => purgeRoutineChecks(prev, routineId));
     setForm(null);
   };
 

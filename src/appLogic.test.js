@@ -13,6 +13,7 @@ import {
   makeNewRoutine,
   nextRoutineId,
   parseState,
+  purgeRoutineChecks,
   rangeStart,
   saveState,
   serializeState,
@@ -112,6 +113,25 @@ describe('nextRoutineId', () => {
     expect(nextRoutineId([{ id: 'r2' }, { id: 'r101' }])).toBe('r102');
     // 비표준 id는 무시.
     expect(nextRoutineId([{ id: 'abc' }, { id: 'r5' }])).toBe('r6');
+  });
+});
+
+describe('purgeRoutineChecks', () => {
+  it('removes all checks for a routine and drops emptied days', () => {
+    const checks = {
+      '2026-07-15': { r2: true, r3: true },
+      '2026-07-16': { r3: true },
+    };
+    expect(purgeRoutineChecks(checks, 'r3')).toEqual({ '2026-07-15': { r2: true } });
+  });
+
+  it('a recycled id inherits no history after purge (Codex #13 P2)', () => {
+    // r3를 체크 후 삭제 → 같은 세션에서 새 루틴이 r3를 재사용해도 옛 기록이 붙지 않는다.
+    const week = new Date(2026, 6, 12);
+    const checks = { '2026-07-15': { r3: true } };
+    const purged = purgeRoutineChecks(checks, 'r3');
+    expect(nextRoutineId([{ id: 'r1' }, { id: 'r2' }])).toBe('r3'); // id 재활용됨
+    expect(weekCount(week, 'r3', purged)).toBe(0); // 그러나 기록은 없음
   });
 });
 
