@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  // 배포는 서브도메인 루트(routine.chillingdaisy.org → 컨테이너 nginx)로 서빙 → base는 '/'.
   plugins: [
     react(),
     VitePWA({

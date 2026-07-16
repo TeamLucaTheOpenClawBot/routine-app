@@ -40,6 +40,13 @@ npm run preview # 빌드본 미리보기 (SW·오프라인 검증은 여기서)
 독립 실행(standalone)된다. 브랜드 아이콘(틸 체크)은 `public/`에 192/512/maskable/apple-touch로 제공.
 SW·오프라인은 빌드본에서만 동작하므로 `npm run preview`로 검증한다.
 
+## 배포
+
+`main` 머지 시 GitHub Actions가 Docker 이미지(nginx + `dist/`)를 빌드·검증해
+GHCR(`ghcr.io/teamlucatheopenclawbot/routine-app`)로 push하고, Oracle VM의 watchtower가
+자동으로 새 이미지를 반영한다. 외부 노출은 Cloudflare Tunnel(`routine.chillingdaisy.org` →
+서버 `localhost:8080`) — 공인 포트 개방 없음. 서버 1회 세팅·검증·롤백은 [deploy/README.md](deploy/README.md).
+
 ## 구조
 
 ```text
