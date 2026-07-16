@@ -53,7 +53,12 @@
   서비스워커·매니페스트를 생성. 앱 셸을 precache하고 `navigateFallback: index.html`로
   오프라인에서도 로드된다(백엔드 없는 SPA라 이걸로 완전 오프라인). **주의**: Workbox `globPatterns`는
   앱 셸(`js/css/html`)로 한정 — 아이콘/favicon은 매니페스트·`includeAssets`가 이미 precache에 넣으므로,
-  glob이 `png/svg/ico`까지 매칭하면 **URL 중복**이 생겨 SW install이 깨진다(오프라인/설치 실패). 매니페스트는 `standalone`·`theme_color`
+  glob이 `png/svg/ico`까지 매칭하면 **URL 중복**이 생겨 SW install이 깨진다(오프라인/설치 실패).
+- **배포**(#5): Docker 이미지(nginx가 `dist/` 서빙 — PWA 캐시 규칙은 `deploy/nginx.conf`:
+  sw/index/manifest no-cache · `/assets` 불변). main 머지 시 `.github/workflows/deploy.yml`이
+  이미지 빌드→컨테이너 스모크 테스트→GHCR publish(PR에선 빌드+스모크만). Oracle VM에서
+  watchtower(label-enable)가 자동 반영, 외부 노출은 Cloudflare Tunnel
+  (`routine.chillingdaisy.org` → `localhost:8080`, 공인 포트 개방 없음). 서버 절차 `deploy/README.md`. 매니페스트는 `standalone`·`theme_color`
   `#0B1220`. 아이콘은 `public/`의 브랜드 틸 체크(192/512/maskable/apple-touch/favicon) — 소스는
   `public/logo.svg`, 재생성은 `npx @vite-pwa/assets-generator --preset minimal-2023 public/logo.svg`
   후 maskable은 풀블리드가 되도록 `pwa-512x512.png`로 덮어쓴다. SW 등록은 플러그인이 자동 주입.
@@ -61,6 +66,7 @@
 ## 로드맵 단계 메모
 
 - Phase 1: ~~#1 실제 날짜~~(완료 · PR #11) · ~~#2 localStorage 영속화 + 데모 시드 제거~~(완료 · PR #13)
-- Phase 2: ~~#3 반응형 전체화면(목업 프레임 제거)~~(완료) · ~~#4 PWA~~(완료) · **다음 → #5** 배포(정적 호스팅 + 자동 배포)
-- Phase 3: #6 알림 · #7 백엔드·계정·클라우드 동기화
+- Phase 2: ~~#3 반응형 전체화면(목업 프레임 제거)~~(완료) · ~~#4 PWA~~(완료) · ~~#5 배포~~(레포 측 완료 —
+  CI→GHCR→watchtower·터널, **서버 1회 세팅 남음**: `deploy/README.md`)
+- Phase 3: **다음 → #7** 백엔드·계정·클라우드 동기화 · #6 알림
 - 상시: #8 테스트·접근성·에러 처리·브랜딩
