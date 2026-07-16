@@ -22,6 +22,13 @@ describe('App persistence (#2)', () => {
     expect(screen.queryByText('첫 루틴 만들기')).not.toBeInTheDocument();
   });
 
+  it('drops the mockup phone frame — no fake status bar (#3)', () => {
+    render(<App />);
+    // 가짜 상태바(9:41 · 5G)가 제거돼 실제 전체화면 레이아웃으로 렌더된다.
+    expect(screen.queryByText('9:41')).not.toBeInTheDocument();
+    expect(screen.queryByText('5G')).not.toBeInTheDocument();
+  });
+
   it('restores a checked routine after remount (survives refresh)', () => {
     localStorage.setItem(STORAGE_KEY, serializeState({ routines: [routine], checks: {}, weekStart: 0, notif: true, remindHour: 21 }));
 

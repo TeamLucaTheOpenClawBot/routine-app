@@ -9,7 +9,7 @@
 
   /* 다크 중립 */
   --color-bg: #0b1220; /* 앱/스크롤 배경 */
-  --color-surface: #161f30; /* 카드·시트·상태바·탭바 */
+  --color-surface: #161f30; /* 카드·시트·탭바 */
   --color-text: #eef2f7; /* 본문 */
   --color-muted: #94a3b8; /* 보조·요일 평일 */
   --color-border: #27324a; /* 카드·구분선 */
@@ -57,11 +57,12 @@ body,
 #root {
   margin: 0;
   min-height: 100%;
-  background: #070b14; /* 폰 프레임 뒤 캔버스 */
+  background: #070b14; /* 앱 컬럼 바깥(데스크톱 여백) 캔버스 */
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100dvh;
+  overscroll-behavior: none; /* 앱처럼 — 스크롤 체이닝/바운스 억제 */
 }
 
 button,
