@@ -50,8 +50,10 @@
     셸 padding을 벗어난다 → 이런 오버레이는 **각자** safe-area 인셋을 직접 padding으로 가져야 노치/홈바에
     가리지 않는다.
 - **PWA**(#4 완료): `vite-plugin-pwa`(`registerType: autoUpdate`, Workbox `generateSW`)로 빌드 시
-  서비스워커·매니페스트를 생성. 앱 셸(html·js·css·아이콘)을 precache하고 `navigateFallback: index.html`로
-  오프라인에서도 로드된다(백엔드 없는 SPA라 이걸로 완전 오프라인). 매니페스트는 `standalone`·`theme_color`
+  서비스워커·매니페스트를 생성. 앱 셸을 precache하고 `navigateFallback: index.html`로
+  오프라인에서도 로드된다(백엔드 없는 SPA라 이걸로 완전 오프라인). **주의**: Workbox `globPatterns`는
+  앱 셸(`js/css/html`)로 한정 — 아이콘/favicon은 매니페스트·`includeAssets`가 이미 precache에 넣으므로,
+  glob이 `png/svg/ico`까지 매칭하면 **URL 중복**이 생겨 SW install이 깨진다(오프라인/설치 실패). 매니페스트는 `standalone`·`theme_color`
   `#0B1220`. 아이콘은 `public/`의 브랜드 틸 체크(192/512/maskable/apple-touch/favicon) — 소스는
   `public/logo.svg`, 재생성은 `npx @vite-pwa/assets-generator --preset minimal-2023 public/logo.svg`
   후 maskable은 풀블리드가 되도록 `pwa-512x512.png`로 덮어쓴다. SW 등록은 플러그인이 자동 주입.

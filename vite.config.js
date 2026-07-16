@@ -29,8 +29,10 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // 정적 앱 셸 precache + 오프라인 내비게이션 폴백 → 오프라인에서 앱 로드.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // 앱 셸(js/css/html)만 glob으로 precache. 아이콘/favicon 등은 매니페스트·includeAssets가
+        // 이미 precache에 추가하므로, 여기서 png/svg/ico를 매칭하면 URL 중복(→ Workbox가 서로 다른
+        // revision 충돌로 SW install 거부)이 발생한다. glob은 앱 셸로 한정한다.
+        globPatterns: ['**/*.{js,css,html}'],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
       },
