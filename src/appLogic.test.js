@@ -4,12 +4,14 @@ import {
   achievementRate,
   clearState,
   currentStreak,
+  defaultRoutines,
   evaluateWeek,
   finalizedResults,
   formatDateKey,
   goalText,
   loadState,
   makeNewRoutine,
+  nextRoutineId,
   parseState,
   rangeStart,
   saveState,
@@ -90,6 +92,26 @@ describe('makeNewRoutine', () => {
     expect(next.color).toBe('#16A34A');
     expect(next.iconKey).toBe('dumbbell');
     expect(next.goalType).toBe('atLeast');
+  });
+});
+
+describe('defaultRoutines', () => {
+  it('seeds 운동·음주 with distinct ids and goal types', () => {
+    const routines = defaultRoutines();
+    expect(routines.map((r) => r.name)).toEqual(['운동', '음주']);
+    expect(routines.map((r) => r.id)).toEqual(['r1', 'r2']);
+    expect(routines.map((r) => r.goalType)).toEqual(['atLeast', 'atMost']);
+  });
+});
+
+describe('nextRoutineId', () => {
+  it('derives an id that cannot collide with existing r<n> ids', () => {
+    expect(nextRoutineId([])).toBe('r1');
+    expect(nextRoutineId(defaultRoutines())).toBe('r3');
+    // 복원된 커스텀 id(r101)가 있어도 그 위로 이어간다 — Codex #13 회귀 방지.
+    expect(nextRoutineId([{ id: 'r2' }, { id: 'r101' }])).toBe('r102');
+    // 비표준 id는 무시.
+    expect(nextRoutineId([{ id: 'abc' }, { id: 'r5' }])).toBe('r6');
   });
 });
 

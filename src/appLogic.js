@@ -72,6 +72,24 @@ export function evaluateWeek(routine, checks, weekStart) {
   return achieved(routine, weekCount(weekStart, routine.id, checks));
 }
 
+// 첫 방문(저장 데이터 없음) 기본 루틴 — 운동(늘리기)·음주(줄이기) 2개.
+export function defaultRoutines() {
+  return [
+    { id: 'r1', name: '운동', iconKey: 'activity', color: '#0EA5A4', goalType: 'atLeast', goalCount: 7, visible: true },
+    { id: 'r2', name: '음주', iconKey: 'beer', color: '#E11D48', goalType: 'atMost', goalCount: 1, visible: true },
+  ];
+}
+
+// 기존 r<n> id와 절대 충돌하지 않는 다음 루틴 id. 라이브 목록에서 매번 파생하므로
+// 영속화 복원 후 모듈 카운터가 리셋돼도 안전(비표준 id는 무시).
+export function nextRoutineId(routines) {
+  const max = routines.reduce((m, r) => {
+    const match = /^r(\d+)$/.exec(r.id);
+    return match ? Math.max(m, Number(match[1])) : m;
+  }, 0);
+  return `r${max + 1}`;
+}
+
 // 다음 새 루틴의 기본값(미사용 색/아이콘 우선).
 export function makeNewRoutine(routines, id) {
   const usedColors = new Set(routines.map((r) => r.color));

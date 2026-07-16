@@ -10,12 +10,16 @@ beforeEach(() => {
 });
 
 describe('App persistence (#2)', () => {
-  it('shows onboarding on a fresh install — no demo seed data', () => {
+  it('seeds 운동·음주 defaults on a fresh install — no prototype demo seed', () => {
     render(<App />);
-    expect(screen.getByText('첫 루틴 만들기')).toBeInTheDocument();
-    // 프로토타입 데모 루틴(물 마시기/독서)은 더 이상 기본으로 뜨지 않는다.
+    // 첫 방문 기본 루틴은 운동·음주 2개.
+    expect(screen.getByText('운동')).toBeInTheDocument();
+    expect(screen.getByText('음주')).toBeInTheDocument();
+    // 프로토타입 데모 루틴(물 마시기/독서)은 더 이상 뜨지 않는다.
     expect(screen.queryByText('물 마시기')).not.toBeInTheDocument();
     expect(screen.queryByText('독서')).not.toBeInTheDocument();
+    // 빈 상태(온보딩)가 아니다.
+    expect(screen.queryByText('첫 루틴 만들기')).not.toBeInTheDocument();
   });
 
   it('restores a checked routine after remount (survives refresh)', () => {

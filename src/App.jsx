@@ -13,7 +13,9 @@ import {
   weekCount,
   achieved,
   goalText,
+  defaultRoutines,
   makeNewRoutine,
+  nextRoutineId,
   finalizedResults,
   achievementRate,
   currentStreak,
@@ -83,13 +85,11 @@ function Icon({ name, size = 20, color = '#0EA5A4', strokeWidth = 2 }) {
   );
 }
 
-let uidCounter = 100;
-
 function App() {
-  // 새로고침 시 복원. 저장 데이터가 없으면(첫 방문) 빈 상태 → 온보딩.
+  // 새로고침 시 복원. 저장 데이터가 없으면(첫 방문) 기본 루틴(운동·음주)으로 시작.
   const [persisted] = useState(loadState);
   const [today, setToday] = useState(() => startOfToday());
-  const [routines, setRoutines] = useState(() => persisted?.routines ?? []);
+  const [routines, setRoutines] = useState(() => persisted?.routines ?? defaultRoutines());
   const [checks, setChecks] = useState(() => persisted?.checks ?? {});
   const [activeTab, setActiveTab] = useState('today');
   const [sheetDay, setSheetDay] = useState(null);
@@ -277,8 +277,7 @@ function App() {
 
   const openAddForm = () => {
     if (routines.length >= 5) return;
-    uidCounter += 1;
-    const next = makeNewRoutine(routines, `r${uidCounter}`);
+    const next = makeNewRoutine(routines, nextRoutineId(routines));
     setRoutines((prev) => [...prev, next]);
     setForm({ mode: 'add', id: next.id });
   };
@@ -302,11 +301,11 @@ function App() {
     setSheetDay(null);
   };
 
-  // 모든 루틴·기록을 지우고 첫 방문 상태(온보딩)로 되돌린다.
+  // 모든 기록을 지우고 첫 방문 상태(기본 루틴)로 되돌린다.
   const resetAll = () => {
-    if (typeof window !== 'undefined' && !window.confirm('모든 루틴과 기록을 삭제할까요? 되돌릴 수 없어요.')) return;
+    if (typeof window !== 'undefined' && !window.confirm('모든 루틴과 기록을 지우고 기본 상태로 되돌릴까요? 되돌릴 수 없어요.')) return;
     clearState();
-    setRoutines([]);
+    setRoutines(defaultRoutines());
     setChecks({});
     setWeekStart(0);
     setNotif(true);
@@ -640,7 +639,7 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
           <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: '14px 15px', display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 700 }}>데이터 초기화</div>
-              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 2 }}>모든 루틴과 기록을 삭제해요</div>
+              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 2 }}>기록을 지우고 기본 상태로 되돌려요</div>
             </div>
             <button type="button" onClick={onReset} style={{ cursor: 'pointer', flex: '0 0 auto', padding: '8px 14px', borderRadius: 10, fontSize: 13, fontWeight: 800, background: 'var(--color-expired-bg)', color: 'var(--color-expired-text)' }}>초기화</button>
           </div>

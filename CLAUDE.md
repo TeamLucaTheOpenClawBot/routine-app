@@ -34,8 +34,10 @@
   `serializeState`/`parseState`(스키마 `version` 필드 + 손상·구버전 방어)로 직렬화/검증하고,
   얇은 래퍼 `loadState`/`saveState`/`clearState`(SSR·프라이빗 모드 방어, storage 주입 가능)가
   실제 저장소를 만진다. App은 초기 1회 로드 → `useEffect`로 변경 시 동기화한다. 저장 키 `routine-app:v1`.
-  **첫 방문은 데모 시드 없이 빈 상태 → 온보딩**(`buildInitialRoutines`/`createSeedChecks` 제거됨).
-  설정의 "데이터 초기화"로 전체를 지우고 온보딩으로 되돌린다.
+  **첫 방문은 기본 루틴 `defaultRoutines()`(운동·음주 2개)로 시작**(프로토타입 데모 시드
+  `buildInitialRoutines`/`createSeedChecks`/물·독서 제거됨). 새 루틴 id는 `nextRoutineId()`로
+  라이브 목록에서 파생해 복원 후에도 충돌하지 않는다. 설정의 "데이터 초기화"로 기록을 지우고
+  기본 상태로 되돌린다.
 
 ## 로드맵 단계 메모
 
