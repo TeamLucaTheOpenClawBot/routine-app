@@ -26,6 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 배포 서버(Oracle Ampere)가 aarch64 → arm64 크로스빌드용 QEMU.
+      - uses: docker/setup-qemu-action@v3
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Build image (local)
@@ -68,6 +71,8 @@ jobs:
         with:
           context: .
           push: true
+          # 서버(aarch64)와 일반(amd64) 둘 다 pull 가능하게 멀티아치로 publish.
+          platforms: linux/amd64,linux/arm64
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
