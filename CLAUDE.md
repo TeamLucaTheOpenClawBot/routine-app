@@ -8,9 +8,10 @@
 
 ## 명령어
 
-- `npm run dev` — 로컬 개발 서버(Vite)
+- `npm run dev` — 로컬 개발 서버(Vite). SW는 dev에서 비활성(캐시 혼선 방지).
 - `npm test` — 순수 로직 + App 구동 렌더 테스트(vitest · jsdom, DB 불필요)
-- `npm run build` — 프로덕션 번들
+- `npm run build` — 프로덕션 번들 + PWA(서비스워커 `sw.js`·`manifest.webmanifest` 생성)
+- `npm run preview` — 빌드 결과 미리보기(**SW/오프라인은 빌드본에서만 동작** → PWA 검증은 여기서)
 
 ## 워크플로 (필수)
 
@@ -48,10 +49,16 @@
     오버레이(루틴 폼·바텀시트)는 컨테이닝 블록이 셸의 **padding-box(테두리 없음 → 뷰포트 가장자리)**라
     셸 padding을 벗어난다 → 이런 오버레이는 **각자** safe-area 인셋을 직접 padding으로 가져야 노치/홈바에
     가리지 않는다.
+- **PWA**(#4 완료): `vite-plugin-pwa`(`registerType: autoUpdate`, Workbox `generateSW`)로 빌드 시
+  서비스워커·매니페스트를 생성. 앱 셸(html·js·css·아이콘)을 precache하고 `navigateFallback: index.html`로
+  오프라인에서도 로드된다(백엔드 없는 SPA라 이걸로 완전 오프라인). 매니페스트는 `standalone`·`theme_color`
+  `#0B1220`. 아이콘은 `public/`의 브랜드 틸 체크(192/512/maskable/apple-touch/favicon) — 소스는
+  `public/logo.svg`, 재생성은 `npx @vite-pwa/assets-generator --preset minimal-2023 public/logo.svg`
+  후 maskable은 풀블리드가 되도록 `pwa-512x512.png`로 덮어쓴다. SW 등록은 플러그인이 자동 주입.
 
 ## 로드맵 단계 메모
 
 - Phase 1: ~~#1 실제 날짜~~(완료 · PR #11) · ~~#2 localStorage 영속화 + 데모 시드 제거~~(완료 · PR #13)
-- Phase 2: ~~#3 반응형 전체화면(목업 프레임 제거)~~(완료) · **다음 → #4** PWA · #5 배포(정적 호스팅 + 자동 배포)
+- Phase 2: ~~#3 반응형 전체화면(목업 프레임 제거)~~(완료) · ~~#4 PWA~~(완료) · **다음 → #5** 배포(정적 호스팅 + 자동 배포)
 - Phase 3: #6 알림 · #7 백엔드·계정·클라우드 동기화
 - 상시: #8 테스트·접근성·에러 처리·브랜딩
