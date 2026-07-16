@@ -40,10 +40,14 @@
   고아 체크가 남아 재활용된 id에 옛 기록이 붙는 것을 막는다. 설정의 "데이터 초기화"로 기록을
   지우고 기본 상태로 되돌린다.
 - **레이아웃**(#3 완료): 목업 폰 프레임·가짜 상태바 제거. 앱 셸은 `100dvh` 세로 flex 컬럼으로
-  뷰포트를 채우고 데스크톱에선 `max-width: 480px` 중앙 정렬(바깥은 `#070b14` 캔버스). safe-area는
-  셸 `padding-top/left/right`(env(safe-area-inset-*)) + 탭바·바텀시트·폼의 `padding-bottom`에
-  `calc(... + env(safe-area-inset-bottom))`로 적용. `index.html`은 `viewport-fit=cover`.
-  스크롤 컨테이너는 `flex:1;min-height:0`(flex 스크롤), 캘린더 요일 헤더는 그 안에서 `sticky top:0`.
+  뷰포트를 채우고 데스크톱에선 `max-width: 480px` 중앙 정렬(바깥은 `#070b14` 캔버스). `index.html`은
+  `viewport-fit=cover`. 스크롤 컨테이너는 `flex:1;min-height:0`(flex 스크롤), 캘린더 요일 헤더는
+  그 안에서 `sticky top:0`.
+  - **safe-area 주의**: 셸 `padding-top/left/right`(env(safe-area-inset-*))는 **일반 흐름 콘텐츠**만
+    보호하고, 탭바 `padding-bottom`은 홈 인디케이터 인셋을 흡수한다. 단 `position:absolute; inset:0`
+    오버레이(루틴 폼·바텀시트)는 컨테이닝 블록이 셸의 **padding-box(테두리 없음 → 뷰포트 가장자리)**라
+    셸 padding을 벗어난다 → 이런 오버레이는 **각자** safe-area 인셋을 직접 padding으로 가져야 노치/홈바에
+    가리지 않는다.
 
 ## 로드맵 단계 메모
 
