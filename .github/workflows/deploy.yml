@@ -77,3 +77,36 @@ jobs:
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
           cache-from: type=gha
+
+  # main publish 후 서버에 즉시 반영(push 배포). GHCR은 private 유지 —
+  # 1회용 GITHUB_TOKEN을 stdin으로 넘겨 pull하고 바로 logout하므로 서버에 영구 자격증명이 없다.
+  deploy:
+    name: deploy to server
+    needs: docker
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-server
+      cancel-in-progress: false
+    steps:
+      - name: SSH deploy (ephemeral GHCR login → pull → up)
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # 토큰은 argv에 노출하지 않고 stdin → docker login --password-stdin 으로만 전달.
+          echo "$TOKEN" | ssh -i ~/.ssh/deploy_key "$SSH_USER@$HOST" \
+            "docker login ghcr.io -u '$ACTOR' --password-stdin \
+             && cd /opt/routine-app \
+             && docker compose pull -q routine-app \
+             && docker compose up -d routine-app \
+             && docker logout ghcr.io \
+             && docker image prune -f >/dev/null \
+             && echo 'deployed:' && docker ps --filter name=routine-app --format '{{.Image}} {{.Status}}'"

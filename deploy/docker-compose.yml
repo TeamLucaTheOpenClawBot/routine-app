@@ -1,24 +1,11 @@
 # Oracle VM용 — /opt/routine-app/docker-compose.yml 로 복사해 사용.
 # 컨테이너는 localhost:8080 에만 바인딩 → cloudflared 터널 ingress(routine.chillingdaisy.org →
 # http://localhost:8080)로만 외부 노출한다. 공인 포트 개방 불필요.
+# 배포는 CI(main 머지)가 SSH로 pull·up 하는 push 방식 — 서버에 GitHub 자격증명이 남지 않는다.
 services:
   routine-app:
     image: ghcr.io/teamlucatheopenclawbot/routine-app:latest
     container_name: routine-app
     ports:
       - "127.0.0.1:8080:80"
-    restart: unless-stopped
-    labels:
-      - com.centurylinklabs.watchtower.enable=true
-
-  # main 머지 → CI가 GHCR로 새 이미지 push → watchtower가 5분 내 자동 pull·재시작.
-  # label-enable 이라 위 라벨 붙은 컨테이너만 갱신(같은 서버의 다른 컨테이너는 안 건드림).
-  watchtower:
-    image: containrrr/watchtower
-    container_name: routine-watchtower
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      # GHCR 프라이빗 이미지 pull 자격(docker login ghcr.io 해두면 생기는 파일)
-      - ~/.docker/config.json:/config.json:ro
-    command: --interval 300 --cleanup --label-enable
     restart: unless-stopped

@@ -1,65 +1,55 @@
 # 배포 가이드 — Oracle VM + Docker + Cloudflare Tunnel
 
 ```text
-main 머지 → GitHub Actions: 이미지 빌드·스모크 → GHCR push
-          → 서버 watchtower: 5분 내 자동 pull·재시작
-사용자 → https://routine.chillingdaisy.org (Cloudflare) → 터널 → 서버 localhost:8080 (nginx 컨테이너)
+main 머지 → GitHub Actions: 이미지 빌드(multi-arch)·스모크 → GHCR push(private 유지)
+          → CI가 서버로 SSH: 1회용 GITHUB_TOKEN docker login → pull → up -d → logout
+사용자 → https://routine.chillingdaisy.org (Cloudflare) → 터널(luca-main) → 서버 localhost:8080 (nginx)
 ```
 
-컨테이너는 `127.0.0.1:8080`에만 바인딩된다 — 외부 노출은 cloudflared 터널이 담당하므로
-OCI Security List에서 포트를 열 필요가 없다.
+- 컨테이너는 `127.0.0.1:8080`에만 바인딩 — 외부 노출은 cloudflared 터널이 담당.
+  OCI Security List 포트 개방 불필요.
+- 서버(Oracle Ampere)는 **aarch64** → 이미지는 반드시 multi-arch(amd64+arm64)로 publish.
+- GHCR 패키지는 **private 유지**. 배포 시 1회용 `GITHUB_TOKEN`으로 pull 후 즉시 logout —
+  서버에 영구 GitHub 자격증명이 남지 않는다.
 
-## 서버 1회 세팅
+## 배포 자격 (설정 완료)
 
-```bash
-# 0) 도구 확인 (없으면 설치)
-docker --version && docker compose version
+- repo Actions 시크릿: `DEPLOY_HOST` · `DEPLOY_USER` · `DEPLOY_SSH_KEY`
+- `DEPLOY_SSH_KEY`는 **배포 전용 ed25519 키**(관리용 키와 별개). 서버 `authorized_keys`에
+  `no-port-forwarding,no-agent-forwarding,no-X11-forwarding` 제한과 함께 등록됨.
+- 키 회전: 새 키 생성 → 서버 authorized_keys 교체 → `gh secret set DEPLOY_SSH_KEY` 갱신.
 
-# 1) GHCR 로그인 — 프라이빗 이미지 pull 자격
-#    GitHub PAT(classic, read:packages 권한만) 발급: https://github.com/settings/tokens
-echo <PAT> | docker login ghcr.io -u <github-username> --password-stdin
+## 서버 1회 세팅 (완료)
 
-# 2) compose 배치 및 기동
-sudo mkdir -p /opt/routine-app && cd /opt/routine-app
-#   (이 repo의 deploy/docker-compose.yml 내용을 이 경로에 복사)
-docker compose up -d
+- `/opt/routine-app/docker-compose.yml` 배치 (이 디렉토리의 compose 파일)
+- 배포 전용 공개키 authorized_keys 등록
 
-# 3) 동작 확인
-curl -fsSI http://localhost:8080/ | head -3
-```
+## Cloudflare 터널 ingress
 
-> GHCR 이미지는 최초 CI publish(main 머지) 후 생긴다. 그 전에 `up -d` 하면 pull 실패가 정상.
-> 대안: 패키지를 public으로 바꾸면(GitHub → Packages → routine-app → settings) 로그인 없이 pull 가능.
+`~/.cloudflared/config.yaml`의 ingress에 404 캐치올 **위에** 추가:
 
-## Cloudflare 터널 ingress 추가
-
-기존 터널(예: `app.chillingdaisy.org`를 서빙 중인 것)에 hostname 하나만 추가한다.
-
-- **대시보드 관리 터널**: Zero Trust → Networks → Tunnels → 해당 터널 → Public Hostname 추가
-  → `routine.chillingdaisy.org` → Service `http://localhost:8080`. (DNS 레코드 자동 생성)
-- **config.yml 관리 터널**: ingress에 아래 항목을 404 캐치올 **위에** 추가 후 cloudflared 재시작:
-
-  ```yaml
+```yaml
   - hostname: routine.chillingdaisy.org
     service: http://localhost:8080
-  ```
-
-  DNS 라우트 등록: `cloudflared tunnel route dns <터널이름> routine.chillingdaisy.org`
-
-## 배포 검증
-
-```bash
-curl -fsSI https://routine.chillingdaisy.org/ | head -5                      # 200
-curl -fsSI https://routine.chillingdaisy.org/sw.js | grep -i cache-control   # no-cache
-curl -fsSI https://routine.chillingdaisy.org/manifest.webmanifest | grep -i content-type
 ```
 
-폰 브라우저로 접속 → "홈 화면에 추가" → 비행기 모드에서 실행(오프라인 확인).
+DNS 라우트 등록(1회): `cloudflared tunnel route dns luca-main routine.chillingdaisy.org`
+적용: `sudo systemctl restart luca-cloudflared` — **주의: 같은 터널의 다른 서비스가 몇 초 순단**된다.
+
+## 검증
+
+```bash
+# 서버에서
+curl -fsSI http://localhost:8080/ | head -3
+# 외부에서
+curl -fsSI https://routine.chillingdaisy.org/ | head -5                      # 200
+curl -fsSI https://routine.chillingdaisy.org/sw.js | grep -i cache-control   # no-cache
+```
+
+폰 브라우저 접속 → "홈 화면에 추가" → 비행기 모드 실행(오프라인 확인).
 
 ## 롤백
 
-```bash
-# GHCR 태그는 커밋 sha별로도 push된다. 특정 버전으로 고정:
-docker compose pull && docker compose up -d          # 최신 반영(수동)
-# 또는 compose image 태그를 ghcr.io/...:{sha} 로 바꿔 up -d
-```
+GHCR엔 커밋 sha 태그도 push된다. `/opt/routine-app/docker-compose.yml`의 image를
+`ghcr.io/teamlucatheopenclawbot/routine-app:<sha>`로 바꾸고 CI 재배포를 기다리거나,
+서버에서 (로그인 상태가 아니므로) 직전 로컬 이미지로 `docker compose up -d` 한다.
