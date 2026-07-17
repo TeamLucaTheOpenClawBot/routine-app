@@ -14,7 +14,9 @@ permissions:
 
 concurrency:
   group: docker-${{ github.ref }}
-  cancel-in-progress: true
+  # PR 런은 새 커밋이 오면 취소해도 되지만, main 런 취소는 진행 중인 프로덕션 배포를
+  # 죽일 수 있다 → main은 취소 대신 큐잉.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   IMAGE: ghcr.io/teamlucatheopenclawbot/routine-app
