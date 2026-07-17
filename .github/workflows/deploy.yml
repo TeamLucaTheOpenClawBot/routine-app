@@ -14,7 +14,9 @@ permissions:
 
 concurrency:
   group: docker-${{ github.ref }}
-  cancel-in-progress: true
+  # PR 런은 새 커밋이 오면 취소해도 되지만, main 런 취소는 진행 중인 프로덕션 배포를
+  # 죽일 수 있다 → main은 취소 대신 큐잉.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   IMAGE: ghcr.io/teamlucatheopenclawbot/routine-app
@@ -77,3 +79,49 @@ jobs:
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
           cache-from: type=gha
+
+  # main publish 후 서버에 즉시 반영(push 배포). GHCR은 private 유지 —
+  # 1회용 GITHUB_TOKEN을 stdin으로 넘겨 pull하고 바로 logout하므로 서버에 영구 자격증명이 없다.
+  deploy:
+    name: deploy to server
+    needs: docker
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # 서버로 넘기는 GITHUB_TOKEN은 pull만 하면 되므로 잡 레벨에서 read로 강등(최소권한).
+    permissions:
+      contents: read
+      packages: read
+    concurrency:
+      group: deploy-server
+      cancel-in-progress: false
+    steps:
+      - name: SSH deploy (ephemeral GHCR login → pull → up)
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_USER }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # 호스트 키 핀닝: keyscan(그 순간의 키를 무조건 신뢰) 대신 시크릿에 고정한 서버
+          # 정본 키만 신뢰한다 — DNS/경로 스푸핑·키 교체 시 토큰 전송 전에 접속이 실패한다.
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # 토큰은 argv에 노출하지 않고 stdin → docker login --password-stdin 으로만 전달.
+          # trap: pull/up이 실패해도 logout이 반드시 실행돼 자격증명이 서버에 남지 않는다.
+          # --remove-orphans: compose에서 제거된 서비스(구 watchtower 등)를 함께 정리.
+          # 롤백 보존은 시간이 아니라 태그로: pull 전에 현재 latest를 :previous로 재태그해두면
+          # 태그가 붙어 있어 prune(dangling 전용)에서 살아남는다 — 배포 간격과 무관하게 직전
+          # 이미지 1개가 항상 보존되고, 그 이전 것만 dangling이 되어 정리된다.
+          echo "$TOKEN" | ssh -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key "$SSH_USER@$HOST" \
+            "set -e; trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT; \
+             docker login ghcr.io -u '$ACTOR' --password-stdin; \
+             cd /opt/routine-app; \
+             docker tag ghcr.io/teamlucatheopenclawbot/routine-app:latest ghcr.io/teamlucatheopenclawbot/routine-app:previous 2>/dev/null || true; \
+             docker compose pull -q routine-app; \
+             docker compose up -d --remove-orphans routine-app; \
+             docker image prune -f >/dev/null; \
+             echo 'deployed:'; docker ps --filter name=routine-app --format '{{.Image}} {{.Status}}'"

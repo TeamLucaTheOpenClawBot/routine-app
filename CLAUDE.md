@@ -3,7 +3,8 @@
 주간 습관 트래커(루틴 체크). 탭 체크·루틴 추가/편집·캘린더·통계 UI. **최종 목표는 프로토타입이 아니라
 "전체 온전한 앱"**(실제 날짜로 매일 사용·데이터 유지·PWA 설치·정시 알림·다기기 동기화되는 프로덕션 수준).
 
-- 구현 로드맵: 에픽 이슈 **#9**, 세부 **#1~#8**. 진행 순서 1(날짜)→2(저장)→3(레이아웃)→4(PWA)→5(배포)→7(백엔드)→6(알림)→8(품질, 병행).
+- 구현 로드맵: 에픽 이슈 **#9** — 세부 이슈·진행 순서·추가 백로그는 **에픽 체크박스가 단일 원장**.
+  현재 위치 요약은 아래 "로드맵 단계 메모".
 - 스택: Vite + React 18(단일 패키지, JS/JSX). 테스트 vitest + Testing Library(jsdom).
 
 ## 명령어
@@ -16,10 +17,11 @@
 ## 워크플로 (필수)
 
 - **main 직접 커밋 금지.** feature 브랜치 → PR(`Closes #N`) → CI green → **머지는 사용자가 한다.**
-- PR은 작게, 한 번에 하나(직전 PR 머지 후 다음 착수). 백로그는 GitHub 이슈로 추적(#1~#9).
+- PR은 작게, 한 번에 하나(직전 PR 머지 후 다음 착수). 백로그는 GitHub 이슈로 추적(에픽 #9 · `gh issue list`).
 - 로드맵 작업 착수 전 해당 이슈를 확인하고, PR 본문에 `Closes #N`으로 연결.
 - 커밋 메시지에 `Co-Authored-By` 트레일러 유지.
-- 문서(README·CLAUDE.md)가 실상태와 어긋나면 `doc-lint` 스킬로 점검(보고 전용, 자동 수정 안 함).
+- **doc-lint 머지 체크포인트**: PR 머지가 확인되면 **다음 이슈 착수 전에** `doc-lint` 스킬로
+  문서(README·CLAUDE.md·에픽 #9)를 점검한다(보고 전용, 자동 수정 안 함 — 수정은 별도 이슈/PR).
 
 ## 아키텍처
 
@@ -54,19 +56,24 @@
   오프라인에서도 로드된다(백엔드 없는 SPA라 이걸로 완전 오프라인). **주의**: Workbox `globPatterns`는
   앱 셸(`js/css/html`)로 한정 — 아이콘/favicon은 매니페스트·`includeAssets`가 이미 precache에 넣으므로,
   glob이 `png/svg/ico`까지 매칭하면 **URL 중복**이 생겨 SW install이 깨진다(오프라인/설치 실패).
+  매니페스트는 `standalone`·`theme_color` `#0B1220`. 아이콘은 `public/`의 브랜드 틸 체크
+  (192/512/maskable/apple-touch/favicon) — 소스는 `public/logo.svg`, 재생성은
+  `npx @vite-pwa/assets-generator --preset minimal-2023 public/logo.svg` 후 maskable은
+  풀블리드가 되도록 `pwa-512x512.png`로 덮어쓴다. SW 등록은 플러그인이 자동 주입.
 - **배포**(#5): Docker 이미지(nginx가 `dist/` 서빙 — PWA 캐시 규칙은 `deploy/nginx.conf`:
   sw/index/manifest no-cache · `/assets` 불변). main 머지 시 `.github/workflows/deploy.yml`이
-  이미지 빌드→컨테이너 스모크 테스트→GHCR publish(PR에선 빌드+스모크만). Oracle VM에서
-  watchtower(label-enable)가 자동 반영, 외부 노출은 Cloudflare Tunnel
-  (`routine.chillingdaisy.org` → `localhost:8080`, 공인 포트 개방 없음). 서버 절차 `deploy/README.md`. 매니페스트는 `standalone`·`theme_color`
-  `#0B1220`. 아이콘은 `public/`의 브랜드 틸 체크(192/512/maskable/apple-touch/favicon) — 소스는
-  `public/logo.svg`, 재생성은 `npx @vite-pwa/assets-generator --preset minimal-2023 public/logo.svg`
-  후 maskable은 풀블리드가 되도록 `pwa-512x512.png`로 덮어쓴다. SW 등록은 플러그인이 자동 주입.
+  이미지 빌드(**multi-arch** — 서버가 Oracle Ampere aarch64)→컨테이너 스모크→GHCR publish(private)
+  →**CI가 서버로 SSH 배포**: 1회용 GITHUB_TOKEN으로 pull 후 즉시 logout(서버에 영구 자격증명 없음,
+  시크릿 `DEPLOY_HOST/USER/SSH_KEY/KNOWN_HOSTS` — 호스트 키는 핀닝, keyscan 안 씀).
+  PR에선 빌드+스모크만. 외부 노출은 Cloudflare Tunnel
+  (`routine.chillingdaisy.org` → `localhost:8080`, 공인 포트 개방 없음). 서버 절차 `deploy/README.md`.
 
 ## 로드맵 단계 메모
 
 - Phase 1: ~~#1 실제 날짜~~(완료 · PR #11) · ~~#2 localStorage 영속화 + 데모 시드 제거~~(완료 · PR #13)
 - Phase 2: ~~#3 반응형 전체화면(목업 프레임 제거)~~(완료) · ~~#4 PWA~~(완료) · ~~#5 배포~~(레포 측 완료 —
-  CI→GHCR→watchtower·터널, **서버 1회 세팅 남음**: `deploy/README.md`)
-- Phase 3: **다음 → #7** 백엔드·계정·클라우드 동기화 · #6 알림
+  CI 빌드→GHCR(private)→CI SSH push 배포·Cloudflare 터널, 서버 세팅·검증 절차는 `deploy/README.md`)
+- 백로그: **다음 → #16** 루틴별 찬스 시스템(주/월 리필·기타찬스·체크 3-상태) — 저장 스키마 v2가
+  #7 동기화 설계에 영향을 주므로 백엔드 전에 확정
+- Phase 3: #7 백엔드·계정·클라우드 동기화 · #6 알림
 - 상시: #8 테스트·접근성·에러 처리·브랜딩
