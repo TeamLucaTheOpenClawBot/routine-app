@@ -61,8 +61,14 @@ curl -fsSI https://routine.chillingdaisy.org/sw.js | grep -i cache-control   # n
 
 ## 롤백
 
-- **빠른 길(7일 이내)**: 배포 시 prune이 `--filter until=168h`라 **직전 이미지가 로컬에 남아 있다**.
-  `docker image ls ghcr.io/teamlucatheopenclawbot/routine-app`에서 직전 이미지 ID 확인 →
-  `docker tag <ID> ghcr.io/teamlucatheopenclawbot/routine-app:latest && docker compose up -d routine-app`.
+- **빠른 길**: 배포 스크립트가 pull 전에 직전 latest를 **`:previous`로 재태그**해 항상 1개 보존한다
+  (배포 간격 무관 — prune은 dangling만 지우므로 태그가 있는 previous는 살아남는다).
+
+  ```bash
+  docker tag ghcr.io/teamlucatheopenclawbot/routine-app:previous \
+             ghcr.io/teamlucatheopenclawbot/routine-app:latest
+  docker compose up -d routine-app
+  ```
+
 - **정석**: 되돌릴 커밋을 main에 revert-머지하면 CI가 그 시점 이미지를 새로 배포한다.
   (GHCR엔 sha 태그도 있지만 private이라 서버 단독 pull은 불가 — CI 경유가 기본.)
