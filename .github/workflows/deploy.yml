@@ -119,5 +119,5 @@ jobs:
              cd /opt/routine-app; \
              docker compose pull -q routine-app; \
              docker compose up -d --remove-orphans routine-app; \
-             docker image prune -f >/dev/null; \
+             docker image prune -f --filter 'until=168h' >/dev/null; \
              echo 'deployed:'; docker ps --filter name=routine-app --format '{{.Image}} {{.Status}}'"

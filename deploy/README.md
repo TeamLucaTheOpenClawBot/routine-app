@@ -17,10 +17,18 @@ main 머지 → GitHub Actions: 이미지 빌드(multi-arch)·스모크 → GHCR
 - repo Actions 시크릿: `DEPLOY_HOST` · `DEPLOY_USER` · `DEPLOY_SSH_KEY` · `DEPLOY_KNOWN_HOSTS`
 - `DEPLOY_SSH_KEY`는 **배포 전용 ed25519 키**(관리용 키와 별개). 서버 `authorized_keys`에
   `no-port-forwarding,no-agent-forwarding,no-X11-forwarding` 제한과 함께 등록됨.
-- `DEPLOY_KNOWN_HOSTS`는 서버 정본 호스트 키(`/etc/ssh/ssh_host_ed25519_key.pub`) 핀닝 —
-  keyscan(TOFU) 대신 이 키만 신뢰하므로 스푸핑 시 토큰 전송 전에 접속이 실패한다.
+- `DEPLOY_KNOWN_HOSTS`는 호스트 키 핀닝 — keyscan(TOFU) 대신 이 값만 신뢰하므로 스푸핑 시
+  토큰 전송 전에 접속이 실패한다. **값은 raw `.pub` 파일이 아니라 호스트가 포함된 완전한
+  known_hosts 한 줄**(`<서버IP> ssh-ed25519 AAAA...`)이어야 한다 — OpenSSH는 호스트명으로
+  먼저 매칭하므로 호스트 없인 모든 배포가 접속 단계에서 실패한다. 갱신 명령:
+
+  ```bash
+  echo "<서버IP> $(ssh <서버> cat /etc/ssh/ssh_host_ed25519_key.pub)" \
+    | gh secret set DEPLOY_KNOWN_HOSTS --repo TeamLucaTheOpenClawBot/routine-app
+  ```
+
 - 키 회전: 새 키 생성 → 서버 authorized_keys 교체 → `gh secret set DEPLOY_SSH_KEY` 갱신.
-  서버 호스트 키 재설치 시엔 `DEPLOY_KNOWN_HOSTS`도 갱신.
+  서버 호스트 키 재설치 시엔 `DEPLOY_KNOWN_HOSTS`도 위 형식으로 갱신.
 
 ## 서버 1회 세팅 (완료)
 
@@ -53,6 +61,8 @@ curl -fsSI https://routine.chillingdaisy.org/sw.js | grep -i cache-control   # n
 
 ## 롤백
 
-GHCR엔 커밋 sha 태그도 push된다. `/opt/routine-app/docker-compose.yml`의 image를
-`ghcr.io/teamlucatheopenclawbot/routine-app:<sha>`로 바꾸고 CI 재배포를 기다리거나,
-서버에서 (로그인 상태가 아니므로) 직전 로컬 이미지로 `docker compose up -d` 한다.
+- **빠른 길(7일 이내)**: 배포 시 prune이 `--filter until=168h`라 **직전 이미지가 로컬에 남아 있다**.
+  `docker image ls ghcr.io/teamlucatheopenclawbot/routine-app`에서 직전 이미지 ID 확인 →
+  `docker tag <ID> ghcr.io/teamlucatheopenclawbot/routine-app:latest && docker compose up -d routine-app`.
+- **정석**: 되돌릴 커밋을 main에 revert-머지하면 CI가 그 시점 이미지를 새로 배포한다.
+  (GHCR엔 sha 태그도 있지만 private이라 서버 단독 pull은 불가 — CI 경유가 기본.)
