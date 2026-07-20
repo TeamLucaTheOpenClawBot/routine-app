@@ -35,6 +35,10 @@ export default defineConfig({
         // revision 충돌로 SW install 거부)이 발생한다. glob은 앱 셸로 한정한다.
         globPatterns: ['**/*.{js,css,html}'],
         navigateFallback: 'index.html',
+        // /api/*는 앱 셸로 폴백시키지 않는다(#7). 이게 없으면 동기화 요청이 오프라인·SW 경유 시
+        // index.html을 받아 클라이언트가 HTML을 JSON으로 파싱하려 들고, 실패가 '동기화 오류'로
+        // 뭉개져 원인을 못 찾는다. 네트워크 오류로 정직하게 실패하는 편이 낫다.
+        navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
       },
       // 개발 서버에선 SW 비활성(캐시로 인한 개발 혼선 방지).

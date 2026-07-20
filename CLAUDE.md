@@ -94,6 +94,20 @@
   `github.ref == 'refs/heads/main'` 게이팅이라 외부 PR로는 배포 경로에 도달할 수 없다.
   주의: 앞으로 커밋에 서버 IP·키를 넣으면 즉시 공개된다(현재 히스토리는 클린).
 
+- **백엔드/동기화**(#7 · 진행 중): 단독 사용자 전제. `server/`가 **의존성 0개** Node API다
+  (내장 모듈만 — native 모듈을 쓰면 `node_modules`가 타깃 아키텍처로 빌드돼야 해서 arm64 이미지에서
+  QEMU `npm install`이 되살아난다. 프론트의 `BUILDPLATFORM` 트릭은 native엔 안 통한다).
+  **인증은 직접 구현하지 않는다** — Cloudflare Access가 `routine.chillingdaisy.org/api` 경로에
+  붙고, API는 엣지가 넣는 JWT만 검증한다(`server/src/access.js`, alg를 RS256으로 고정해 alg 혼동
+  차단 · aud/iss 확인으로 타 앱·타 팀 토큰 차단). **fail-closed**: `ACCESS_TEAM_DOMAIN`/`ACCESS_AUD`가
+  없으면 기동하지 않는다(설정 누락이 무인증 공개가 되지 않도록). compose에선 `profiles: ["api"]`로
+  기본 비활성 — Access 설정 전에 켜지면 크래시 루프가 된다. 켜는 절차는 `deploy/README.md`.
+  - **nginx `/api/` 프록시는 upstream을 변수로 지정**하고 `resolver`를 둔다. 리터럴로 쓰면 nginx가
+    기동 시 이름을 해석하고 API 컨테이너가 없을 때 **nginx가 안 떠서 프론트까지 내려간다.**
+  - Workbox `navigateFallbackDenylist`에 `/api/`를 넣는다 — 없으면 동기화 요청이 앱 셸(index.html)로
+    폴백돼 클라이언트가 HTML을 JSON으로 파싱하려 든다.
+  - 동기화 모델은 **셀 단위 merge**(전체 문서 LWW 아님) + 클라이언트 outbox. 근거·분할은 이슈 #7 코멘트.
+
 ## 로드맵 단계 메모
 
 - Phase 1: ~~#1 실제 날짜~~(완료 · PR #11) · ~~#2 localStorage 영속화 + 데모 시드 제거~~(완료 · PR #13)

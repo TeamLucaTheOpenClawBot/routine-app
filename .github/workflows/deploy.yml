@@ -20,6 +20,7 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/teamlucatheopenclawbot/routine-app
+  API_IMAGE: ghcr.io/teamlucatheopenclawbot/routine-app-api
 
 jobs:
   docker:
@@ -45,6 +46,38 @@ jobs:
           tags: routine-app:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build API image (local)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          load: true
+          tags: routine-app-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # API는 fail-closed다 — Access 설정 없이는 기동하지 않고, 설정이 있어도 유효한 JWT 없이는 401.
+      # 두 성질을 실제 컨테이너로 확인한다(#7).
+      - name: API smoke test
+        run: |
+          set -x
+          # 1) 설정 없이 기동하면 즉시 종료해야 한다(설정 누락이 무인증 공개로 이어지지 않도록).
+          #    종료 코드를 정확히 본다: `! docker run`으로 뭉뚱그리면 fail-closed가 깨져 서버가
+          #    계속 떠 있어도 timeout(124)이 실패로 잡혀 통과해버린다 — 1이어야만 통과.
+          set +e
+          timeout 20 docker run --rm routine-app-api:ci
+          code=$?
+          set -e
+          test "$code" = "1"
+          # 2) 설정이 있으면 뜨고, health는 무인증 200
+          docker run -d --rm -p 8081:8081 --name api \
+            -e ACCESS_TEAM_DOMAIN=https://example.cloudflareaccess.com -e ACCESS_AUD=test-aud \
+            routine-app-api:ci
+          for i in $(seq 1 30); do curl -fsS http://localhost:8081/api/health >/dev/null 2>&1 && break; sleep 0.5; done
+          curl -fsS http://localhost:8081/api/health | grep -q '"status":"ok"'
+          # 3) 토큰 없이 보호 경로에 접근하면 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/api/me)" = "401"
+          docker stop api
 
       # 실제 컨테이너를 띄워 서빙과 PWA 캐시 규칙을 검증한다.
       - name: Smoke test
@@ -86,6 +119,19 @@ jobs:
           # cache-to가 없으면 arm64 레이어가 매번 처음부터 재빌드된다(#20).
           cache-to: type=gha,mode=max
 
+      - name: Publish API to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.API_IMAGE }}:latest
+            ${{ env.API_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # main publish 후 서버에 즉시 반영(push 배포). GHCR은 private 유지 —
   # 1회용 GITHUB_TOKEN을 stdin으로 넘겨 pull하고 바로 logout하므로 서버에 영구 자격증명이 없다.
   deploy:
@@ -103,6 +149,9 @@ jobs:
       group: deploy-server
       cancel-in-progress: false
     steps:
+      # compose 파일을 서버로 실어 보내야 하므로 레포가 필요하다.
+      - uses: actions/checkout@v4
+
       - name: SSH deploy (ephemeral GHCR login → pull → up)
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -118,9 +167,17 @@ jobs:
           # 호스트 키 핀닝: keyscan(그 순간의 키를 무조건 신뢰) 대신 시크릿에 고정한 서버
           # 정본 키만 신뢰한다 — DNS/경로 스푸핑·키 교체 시 토큰 전송 전에 접속이 실패한다.
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # compose 파일을 레포에서 서버로 동기화한다. 이전에는 1회 수동 배치라 레포에 서비스를
+          # 추가해도 서버에 영영 반영되지 않았다(#7 리뷰에서 발견) — 레포를 단일 원본으로 만든다.
+          # `.env`(Access 값)는 서버에만 두고 건드리지 않는다.
+          scp -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key \
+            deploy/docker-compose.yml "$SSH_USER@$HOST:/opt/routine-app/docker-compose.yml"
           # 토큰은 argv에 노출하지 않고 stdin → docker login --password-stdin 으로만 전달.
           # trap: pull/up이 실패해도 logout이 반드시 실행돼 자격증명이 서버에 남지 않는다.
           # --remove-orphans: compose에서 제거된 서비스(구 watchtower 등)를 함께 정리.
+          # pull에 --profile api를 주는 이유: GHCR이 private이라 배포 중(로그인 상태)에 받아두지
+          # 않으면, 사용자가 나중에 .env로 API를 켤 때 자격증명이 없어 pull이 실패한다
+          # (배포 끝에 logout하므로). up은 --profile 없이 두어 .env의 COMPOSE_PROFILES를 따른다.
           # 롤백 보존은 시간이 아니라 태그로: pull 전에 현재 latest를 :previous로 재태그해두면
           # 태그가 붙어 있어 prune(dangling 전용)에서 살아남는다 — 배포 간격과 무관하게 직전
           # 이미지 1개가 항상 보존되고, 그 이전 것만 dangling이 되어 정리된다.
@@ -128,8 +185,15 @@ jobs:
             "set -e; trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT; \
              docker login ghcr.io -u '$ACTOR' --password-stdin; \
              cd /opt/routine-app; \
+             if [ -e .env ] && [ ! -r .env ]; then \
+               echo 'ERROR: .env가 배포 사용자에게 읽히지 않습니다(root 소유 추정).'; \
+               echo '  compose가 COMPOSE_PROFILES/ACCESS_*를 못 읽어 API가 조용히 빠집니다.'; \
+               echo '  해결: sudo chown '"$SSH_USER"' /opt/routine-app/.env'; \
+               exit 1; \
+             fi; \
              docker tag ghcr.io/teamlucatheopenclawbot/routine-app:latest ghcr.io/teamlucatheopenclawbot/routine-app:previous 2>/dev/null || true; \
-             docker compose pull -q routine-app; \
-             docker compose up -d --remove-orphans routine-app; \
+             docker tag ghcr.io/teamlucatheopenclawbot/routine-app-api:latest ghcr.io/teamlucatheopenclawbot/routine-app-api:previous 2>/dev/null || true; \
+             docker compose --profile api pull -q; \
+             docker compose up -d --remove-orphans; \
              docker image prune -f >/dev/null; \
              echo 'deployed:'; docker ps --filter name=routine-app --format '{{.Image}} {{.Status}}'"

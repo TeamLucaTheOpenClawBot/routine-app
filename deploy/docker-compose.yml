@@ -9,3 +9,20 @@ services:
     ports:
       - "127.0.0.1:8080:80"
     restart: unless-stopped
+
+  # 동기화 API(#7). 포트를 호스트에 바인딩하지 않는다 — nginx가 /api/를 프록시하므로
+  # 컨테이너 네트워크 안에서만 닿으면 되고, 외부 노출 경로를 하나로 유지한다.
+  #
+  # **profiles로 기본 비활성**이다. Cloudflare Access 애플리케이션을 만들고 .env에 값을 채운 뒤
+  # COMPOSE_PROFILES=api 로 켠다 — 설정 전에 켜지면 컨테이너가 fail-closed로 종료하며
+  # restart 정책과 맞물려 크래시 루프가 된다. 켜기 전까지 /api/는 502이고 앱 서빙엔 영향이 없다.
+  routine-app-api:
+    profiles: ["api"]
+    image: ghcr.io/teamlucatheopenclawbot/routine-app-api:latest
+    container_name: routine-app-api
+    restart: unless-stopped
+    environment:
+      # Cloudflare Access 애플리케이션 설정. 비어 있으면 컨테이너가 기동하지 않는다(fail-closed) —
+      # 설정 누락이 '무인증 공개'로 이어지지 않게 하기 위한 것. 값은 deploy/README.md 참조.
+      ACCESS_TEAM_DOMAIN: ${ACCESS_TEAM_DOMAIN:-}
+      ACCESS_AUD: ${ACCESS_AUD:-}
