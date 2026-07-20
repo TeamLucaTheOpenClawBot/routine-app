@@ -35,6 +35,46 @@ main 머지 → GitHub Actions: 이미지 빌드(multi-arch)·스모크 → GHCR
 - `/opt/routine-app/docker-compose.yml` 배치 (이 디렉토리의 compose 파일)
 - 배포 전용 공개키 authorized_keys 등록
 
+## 동기화 API 켜기 (#7 — 사용자 수동 단계)
+
+API 서비스는 compose `profiles: ["api"]`로 **기본 비활성**이다. 아래를 마치기 전까지는 배포돼도
+기동하지 않고, `/api/`는 502를 낸다(앱 서빙엔 영향 없음). 인증은 Cloudflare Access가 담당하므로
+**앱에 인증 코드가 없다** — Access를 붙이지 않은 채 켜면 안 된다.
+
+1. **Cloudflare Zero Trust → Access → Applications → Add an application (Self-hosted)**
+   - Application domain: `routine.chillingdaisy.org`, **Path: `api`**
+     (앱 본체에는 걸지 않는다 — 정적 셸까지 Access 뒤로 넣으면 PWA 오프라인 로드가 로그인
+     리다이렉트에 막힌다.)
+   - Policy: Allow → Emails → 본인 이메일
+   - 생성 후 **Application Audience (AUD) Tag**를 복사한다.
+2. **팀 도메인 확인** — Zero Trust → Settings → Custom Pages 등에 표시되는
+   `https://<team>.cloudflareaccess.com`.
+3. **서버에 `.env` 생성** (compose 파일과 같은 디렉토리):
+
+   ```bash
+   sudo tee /opt/routine-app/.env >/dev/null <<'EOF'
+   COMPOSE_PROFILES=api
+   ACCESS_TEAM_DOMAIN=https://<team>.cloudflareaccess.com
+   ACCESS_AUD=<AUD 태그>
+   EOF
+   sudo chmod 600 /opt/routine-app/.env
+   ```
+
+4. **기동·확인**
+
+   ```bash
+   cd /opt/routine-app && docker compose up -d
+   curl -fsS http://localhost:8080/api/health            # {"status":"ok"} — 무인증 허용
+   curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/me   # 401 (토큰 없음)
+   ```
+
+   외부에서 브라우저로 `https://routine.chillingdaisy.org/api/me` 접속 → Access 로그인 후
+   `{"email": ...}`가 나오면 정상.
+
+**설계상 fail-closed다**: `ACCESS_TEAM_DOMAIN`/`ACCESS_AUD`가 비어 있으면 API 컨테이너는 기동하지
+않는다. 설정 누락이 곧 '무인증 공개'가 되는 상황을 막기 위한 것이며, 크래시 루프를 피하려고
+profile로 이중 잠금해 둔 것이다.
+
 ## Cloudflare 터널 ingress
 
 `~/.cloudflared/config.yaml`의 ingress에 404 캐치올 **위에** 추가:
