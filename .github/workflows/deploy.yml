@@ -182,6 +182,12 @@ jobs:
             "set -e; trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT; \
              docker login ghcr.io -u '$ACTOR' --password-stdin; \
              cd /opt/routine-app; \
+             if [ -e .env ] && [ ! -r .env ]; then \
+               echo 'ERROR: .env가 배포 사용자에게 읽히지 않습니다(root 소유 추정).'; \
+               echo '  compose가 COMPOSE_PROFILES/ACCESS_*를 못 읽어 API가 조용히 빠집니다.'; \
+               echo '  해결: sudo chown '"$SSH_USER"' /opt/routine-app/.env'; \
+               exit 1; \
+             fi; \
              docker tag ghcr.io/teamlucatheopenclawbot/routine-app:latest ghcr.io/teamlucatheopenclawbot/routine-app:previous 2>/dev/null || true; \
              docker tag ghcr.io/teamlucatheopenclawbot/routine-app-api:latest ghcr.io/teamlucatheopenclawbot/routine-app-api:previous 2>/dev/null || true; \
              docker compose pull -q; \
