@@ -90,6 +90,15 @@ export function chanceOf(value) {
   return value && typeof value === 'object' && typeof value.chance === 'string' ? value : null;
 }
 
+// 체크 3-상태 조회 — 'none' | 'done' | 'chance'. 뷰가 Boolean(...)으로 판정하면
+// 찬스가 '했음'과 구분되지 않으므로 판정을 여기 한 곳에 둔다.
+export function checkState(checks, dateKey, routineId) {
+  const value = checks[dateKey]?.[routineId];
+  if (value === true) return 'done';
+  if (chanceOf(value)) return 'chance';
+  return 'none';
+}
+
 // 특정 루틴의 찬스 사용 전부 — 날짜 오름차순. dateKey가 YYYY-MM-DD라 사전순=시간순.
 export function chanceUsages(checks, routineId) {
   const out = [];

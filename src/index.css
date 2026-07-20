@@ -18,6 +18,8 @@
   /* 상태 */
   --color-primary-50: rgba(14, 165, 164, 0.16); /* 틸 tint */
   --color-active-text: #4ade80; /* 달성 강조 */
+  --color-chance: #f59e0b; /* 찬스로 킵한 날 — 완료(틸)와 구분되는 앰버 */
+  --color-chance-50: rgba(245, 158, 11, 0.16); /* 찬스 tint */
   --color-expired-bg: rgba(220, 38, 38, 0.18); /* 삭제 버튼 배경 */
   --color-expired-text: #fca5a5; /* 삭제 버튼 텍스트 */
 

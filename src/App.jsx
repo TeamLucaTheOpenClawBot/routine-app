@@ -18,6 +18,9 @@ import {
   nextRoutineId,
   purgeRoutineChecks,
   purgeRoutineBonuses,
+  cycleCheck,
+  checkState,
+  chanceSummary,
   finalizedResults,
   achievementRate,
   currentStreak,
@@ -98,6 +101,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('today');
   const [sheetDay, setSheetDay] = useState(null);
   const [form, setForm] = useState(null); // { mode: 'add'|'edit', id }
+  const [notice, setNotice] = useState(null); // 찬스 소진 등 일시 안내
   const [notif, setNotif] = useState(() => persisted?.notif ?? true);
   const [remindHour] = useState(() => persisted?.remindHour ?? 21);
   const [weekStart, setWeekStart] = useState(() => persisted?.weekStart ?? 0);
@@ -107,6 +111,13 @@ function App() {
   useEffect(() => {
     saveState({ routines, checks, bonusChances, weekStart, notif, remindHour });
   }, [routines, checks, bonusChances, weekStart, notif, remindHour]);
+
+  // 안내는 잠깐만 띄우고 자동으로 사라진다. 새 안내가 오면 타이머도 새로 잡힌다.
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(null), 2600);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   const visibleRoutines = useMemo(() => routines.filter((r) => r.visible), [routines]);
   const isEmpty = routines.length === 0;
@@ -173,8 +184,9 @@ function App() {
         const icons = isFuture
           ? []
           : visibleRoutines.map((routine) => {
-              const done = Boolean(checks[key]?.[routine.id]);
-              return { routine, done, glow: finalized && done && achievedIds.has(routine.id) };
+              const state = checkState(checks, key, routine.id);
+              const done = state !== 'none';
+              return { routine, state, done, glow: finalized && done && achievedIds.has(routine.id) };
             });
         days.push({ key, date, dateNum: date.getDate(), dow: date.getDay(), isToday: key === todayKey, isFuture, icons });
       }
@@ -201,13 +213,15 @@ function App() {
   const todayRows = useMemo(
     () =>
       visibleRoutines.map((routine) => {
-        const done = Boolean(checks[todayKey]?.[routine.id]);
+        const state = checkState(checks, todayKey, routine.id);
         const cnt = weekCount(currentWeekStart, routine, checks);
         const prog = routine.goalType === 'atLeast' ? `이번 주 ${cnt}/${routine.goalCount}회` : `이번 주 ${cnt}회 · 한도 ${routine.goalCount}`;
-        return { routine, done, prog };
+        const chances = chanceSummary(checks, routine.id, today, bonusChances[routine.id], weekStart);
+        return { routine, state, done: state !== 'none', prog, chances };
       }),
-    [checks, currentWeekStart, visibleRoutines, todayKey],
+    [checks, currentWeekStart, visibleRoutines, todayKey, today, bonusChances, weekStart],
   );
+  // 찬스로 킵한 날도 '오늘 처리함'으로 세어 진행 링이 실제 상태를 반영하게 한다.
   const todayDone = todayRows.filter((r) => r.done).length;
   const todayPct = todayRows.length ? Math.round((todayDone / todayRows.length) * 100) : 0;
 
@@ -240,16 +254,15 @@ function App() {
   const editing = form ? routines.find((r) => r.id === form.id) : null;
 
   // ---- mutations ----
+  // 안함 → 했음 → 찬스 → 안함. 순환·소진 판정은 appLogic의 cycleCheck가 하고
+  // 여기서는 보유가 없어 찬스를 건너뛴 경우(blocked)만 안내한다.
   const toggleCheck = (key, routineId) => {
-    setChecks((prev) => {
-      const next = { ...prev };
-      const day = { ...(next[key] || {}) };
-      if (day[routineId]) delete day[routineId];
-      else day[routineId] = true;
-      if (Object.keys(day).length) next[key] = day;
-      else delete next[key];
-      return next;
-    });
+    const routine = routines.find((r) => r.id === routineId);
+    if (!routine) return;
+    // setChecks 업데이터는 순수해야 한다(StrictMode에서 두 번 실행) → 밖에서 계산한다.
+    const { checks: next, blocked } = cycleCheck(checks, routine, key, bonusChances[routineId], weekStart);
+    setChecks(next);
+    if (blocked) setNotice(`남은 찬스가 없어요 — ${routine.name}`);
   };
 
   const updateRoutine = (routineId, patch) => {
@@ -367,6 +380,12 @@ function App() {
 
         {/* day check sheet */}
         {sheetDay && <CheckSheet dayKey={sheetDay} routines={visibleRoutines} checks={checks} onToggle={toggleCheck} onClose={() => setSheetDay(null)} />}
+        {notice && (
+          // 셸의 padding-box가 컨테이닝 블록이라 absolute 오버레이는 safe-area를 직접 흡수해야 한다.
+          <div role="status" aria-live="polite" style={{ position: 'absolute', left: 0, right: 0, bottom: 'calc(78px + env(safe-area-inset-bottom))', display: 'flex', justifyContent: 'center', pointerEvents: 'none', zIndex: 40 }}>
+            <div style={{ maxWidth: '82%', padding: '10px 16px', borderRadius: 999, background: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-lg)', fontSize: 13, fontWeight: 700, color: 'var(--color-text)' }}>{notice}</div>
+          </div>
+        )}
 
         {/* add / edit form (full screen) */}
         {editing && (
@@ -466,8 +485,12 @@ function CalendarScreen({ weeks, weekStart, monthTitle, statText, onAdd, onOpenD
                     {day.icons.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, justifyContent: 'center', alignContent: 'flex-start', width: '100%', marginTop: 2 }}>
                         {day.icons.map((icon) => (
-                          <div key={icon.routine.id} style={{ width: 18, height: 18, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', background: icon.done ? rgba(icon.routine.color, 0.15) : 'transparent', boxShadow: icon.glow ? `0 0 0 1.5px ${rgba(icon.routine.color, 0.9)}, 0 0 8px ${rgba(icon.routine.color, 0.5)}` : 'none', animation: icon.glow ? 'glowPulse 2.6s ease-in-out infinite' : 'none' }}>
-                            <Icon name={icon.routine.iconKey} size={12} color={icon.done ? icon.routine.color : 'var(--color-field-border)'} strokeWidth={2} />
+                          <div key={icon.routine.id} title={icon.state === 'chance' ? `${icon.routine.name} — 찬스` : undefined} style={{ width: 18, height: 18, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', position: 'relative', background: icon.state === 'chance' ? 'var(--color-chance-50)' : icon.done ? rgba(icon.routine.color, 0.15) : 'transparent', boxShadow: icon.glow ? `0 0 0 1.5px ${rgba(icon.routine.color, 0.9)}, 0 0 8px ${rgba(icon.routine.color, 0.5)}` : 'none', animation: icon.glow ? 'glowPulse 2.6s ease-in-out infinite' : 'none' }}>
+                            <Icon name={icon.routine.iconKey} size={12} color={icon.state === 'chance' ? 'var(--color-chance)' : icon.done ? icon.routine.color : 'var(--color-field-border)'} strokeWidth={2} />
+                            {/* 색만으로 구분되지 않도록 찬스 날엔 작은 별을 겹쳐 표시 */}
+                            {icon.state === 'chance' && (
+                              <span aria-hidden style={{ position: 'absolute', right: -1, bottom: -2, fontSize: 8, lineHeight: 1, color: 'var(--color-chance)', fontWeight: 800 }}>★</span>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -503,16 +526,17 @@ function TodayScreen({ today, rows, doneN, total, pct, onToggle }) {
         </div>
       </div>
       <div style={{ padding: '4px 16px 24px', display: 'flex', flexDirection: 'column', gap: 11 }}>
-        {rows.map(({ routine, done, prog }) => (
-          <div key={routine.id} onClick={() => onToggle(routine.id)} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 15px', borderRadius: 18, border: '1px solid var(--color-border)', background: done ? rgba(routine.color, 0.07) : 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', cursor: 'pointer' }}>
+        {rows.map(({ routine, state, done, prog, chances }) => (
+          <div key={routine.id} onClick={() => onToggle(routine.id)} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 15px', borderRadius: 18, border: '1px solid var(--color-border)', background: state === 'chance' ? 'var(--color-chance-50)' : done ? rgba(routine.color, 0.07) : 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', cursor: 'pointer' }}>
             <div style={{ width: 48, height: 48, borderRadius: 14, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: rgba(routine.color, done ? 0.16 : 0.1) }}>
               <Icon name={routine.iconKey} size={26} color={routine.color} strokeWidth={2} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 16.5, fontWeight: 700 }}>{routine.name}</div>
               <div style={{ fontSize: 12.5, color: 'var(--color-muted)', marginTop: 2, fontWeight: 600 }}>{prog}</div>
+              <ChanceBadge chances={chances} />
             </div>
-            <CheckMark done={done} size={30} tick={16} />
+            <CheckMark state={state} size={30} tick={16} />
           </div>
         ))}
       </div>
@@ -662,9 +686,10 @@ function CheckSheet({ dayKey, routines, checks, onToggle, onClose }) {
         </div>
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {routines.map((routine) => {
-            const done = Boolean(checks[dayKey]?.[routine.id]);
+            const state = checkState(checks, dayKey, routine.id);
+            const done = state !== 'none';
             return (
-              <div key={routine.id} onClick={() => onToggle(dayKey, routine.id)} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 13px', borderRadius: 16, border: '1px solid var(--color-border)', background: done ? rgba(routine.color, 0.07) : 'var(--color-surface)', cursor: 'pointer' }}>
+              <div key={routine.id} onClick={() => onToggle(dayKey, routine.id)} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 13px', borderRadius: 16, border: '1px solid var(--color-border)', background: state === 'chance' ? 'var(--color-chance-50)' : done ? rgba(routine.color, 0.07) : 'var(--color-surface)', cursor: 'pointer' }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: rgba(routine.color, done ? 0.16 : 0.1) }}>
                   <Icon name={routine.iconKey} size={22} color={routine.color} strokeWidth={2} />
                 </div>
@@ -672,7 +697,7 @@ function CheckSheet({ dayKey, routines, checks, onToggle, onClose }) {
                   <div style={{ fontSize: 15.5, fontWeight: 700 }}>{routine.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 1 }}>{goalText(routine)}</div>
                 </div>
-                <CheckMark done={done} size={30} tick={15} />
+                <CheckMark state={state} size={30} tick={15} />
               </div>
             );
           })}
@@ -749,10 +774,38 @@ function RoutineForm({ routine, mode, canDelete, onCancel, onSave, onUpdate, onS
   );
 }
 
-function CheckMark({ done, size, tick }) {
+// 3-상태 표식: 안함(빈 원) · 했음(틸 ✓) · 찬스(앰버 ★).
+// 색만으로 구분하지 않도록 글리프도 함께 바꾼다(색각 이상·흑백 출력 대비).
+function CheckMark({ state, size, tick }) {
+  const isChance = state === 'chance';
+  const filled = state !== 'none';
+  const bg = isChance ? 'var(--color-chance)' : 'var(--color-primary)';
   return (
-    <div style={{ width: size, height: size, borderRadius: '50%', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: done ? 'var(--color-primary)' : 'transparent', border: done ? 'none' : '2px solid var(--color-field-border)', color: done ? '#fff' : 'transparent' }}>
-      {done && <span style={{ fontSize: tick, fontWeight: 800, lineHeight: 1 }}>✓</span>}
+    <div
+      role="img"
+      aria-label={isChance ? '찬스로 킵함' : filled ? '완료' : '미완료'}
+      style={{ width: size, height: size, borderRadius: '50%', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: filled ? bg : 'transparent', border: filled ? 'none' : '2px solid var(--color-field-border)', color: filled ? '#fff' : 'transparent' }}
+    >
+      {filled && <span style={{ fontSize: isChance ? tick - 1 : tick, fontWeight: 800, lineHeight: 1 }}>{isChance ? '★' : '✓'}</span>}
+    </div>
+  );
+}
+
+// 보유 찬스 배지 — 주 1 · 월 1 · 보너스 n. 0인 항목은 흐리게.
+function ChanceBadge({ chances }) {
+  const dim = (n) => ({ fontSize: 11, fontWeight: 700, color: n ? 'var(--color-chance)' : 'var(--color-field-border)' });
+  const total = chances.weekly + chances.monthly + chances.bonus;
+  return (
+    <div aria-label={`남은 찬스 ${total}개 — 주 ${chances.weekly}, 월 ${chances.monthly}, 기타 ${chances.bonus}`} style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 3 }}>
+      <span style={dim(chances.weekly)}>주 {chances.weekly}</span>
+      <span style={{ color: 'var(--color-border)', fontSize: 10 }}>·</span>
+      <span style={dim(chances.monthly)}>월 {chances.monthly}</span>
+      {chances.bonus > 0 && (
+        <>
+          <span style={{ color: 'var(--color-border)', fontSize: 10 }}>·</span>
+          <span style={dim(chances.bonus)}>기타 {chances.bonus}</span>
+        </>
+      )}
     </div>
   );
 }
