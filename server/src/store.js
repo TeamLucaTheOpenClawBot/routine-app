@@ -161,22 +161,27 @@ export function createStore(db) {
     // 소유자 키 이관(IdP 변경으로 sub가 바뀐 경우의 복구).
     // **seq를 새로 발급하는 것이 핵심이다.** 단순히 owner만 바꾸면 행의 seq가 옛 커서 이하로
     // 남아, 그 커서를 든 클라이언트가 조회해도 전부 건너뛰어 데이터가 여전히 없어 보인다.
+    // **옮기지 않고 병합한다.** 사용자는 보통 새 신원으로 앱을 좀 써본 뒤에야 데이터가
+    // 비어 보인다는 걸 알아채므로, 그 시점엔 양쪽에 같은 칸이 있기 쉽다. owner를 그대로
+    // UPDATE하면 대상 PK와 충돌해 UNIQUE 제약으로 트랜잭션 전체가 롤백되고 복구가 아예 안 된다.
+    // 충돌하는 칸은 기존 LWW 규칙(ts가 큰 쪽)으로 정한다.
     rekeyOwner(from, to) {
       if (!from || !to || from === to) return { cells: 0, docs: 0 };
       db.exec('BEGIN IMMEDIATE');
       try {
         let seq = nextSeq.get().next_seq;
-        const cellRows = db.prepare('SELECT rowid AS rid FROM cells WHERE owner = ?').all(from);
-        const setCell = db.prepare('UPDATE cells SET owner = ?, seq = ? WHERE rowid = ?');
-        for (const r of cellRows) setCell.run(to, seq++, r.rid);
 
-        const docRows = db.prepare('SELECT rowid AS rid FROM docs WHERE owner = ?').all(from);
-        const setDoc = db.prepare('UPDATE docs SET owner = ?, seq = ? WHERE rowid = ?');
-        for (const r of docRows) setDoc.run(to, seq++, r.rid);
+        const srcCells = db.prepare('SELECT date_key, routine_id, value, ts FROM cells WHERE owner = ?').all(from);
+        for (const r of srcCells) putCell.run(to, r.date_key, r.routine_id, r.value, r.ts, seq++);
+        db.prepare('DELETE FROM cells WHERE owner = ?').run(from);
+
+        const srcDocs = db.prepare('SELECT key, value, ts FROM docs WHERE owner = ?').all(from);
+        for (const r of srcDocs) putDoc.run(to, r.key, r.value, r.ts, seq++);
+        db.prepare('DELETE FROM docs WHERE owner = ?').run(from);
 
         bumpSeq.run(seq);
         db.exec('COMMIT');
-        return { cells: cellRows.length, docs: docRows.length };
+        return { cells: srcCells.length, docs: srcDocs.length };
       } catch (err) {
         db.exec('ROLLBACK');
         throw err;
@@ -184,8 +189,21 @@ export function createStore(db) {
     },
 
     // 운영용: 어떤 소유자에 얼마나 쌓여 있는지.
+    // **cells와 docs를 모두 센다** — 루틴·설정만 만들고 아직 체크를 안 한 소유자는
+    // cells가 비어 있어서, cells만 보면 복구 대상으로 찾아지지 않는다.
     owners() {
-      return db.prepare('SELECT owner, COUNT(*) AS n FROM cells GROUP BY owner ORDER BY n DESC').all();
+      return db
+        .prepare(
+          `SELECT owner,
+                  SUM(CASE WHEN src = 'c' THEN n ELSE 0 END) AS cells,
+                  SUM(CASE WHEN src = 'd' THEN n ELSE 0 END) AS docs
+             FROM (SELECT owner, 'c' AS src, COUNT(*) AS n FROM cells GROUP BY owner
+                   UNION ALL
+                   SELECT owner, 'd' AS src, COUNT(*) AS n FROM docs  GROUP BY owner)
+            GROUP BY owner
+            ORDER BY cells + docs DESC, owner`,
+        )
+        .all();
     },
   };
 }

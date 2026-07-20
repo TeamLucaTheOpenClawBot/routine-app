@@ -15,7 +15,7 @@ const store = createStore(openDatabase(process.env.DB_PATH ?? '/data/routine.db'
 if (!from) {
   const rows = store.owners();
   if (!rows.length) console.log('저장된 데이터가 없습니다.');
-  else for (const r of rows) console.log(`${r.owner}\t${r.n}개`);
+  else for (const r of rows) console.log(`${r.owner}\tcells ${r.cells} · docs ${r.docs}`);
   console.log('\n이관: node src/rekey.js <옛sub> <새sub>');
   console.log('현재 로그인의 sub는 /api/me 로 확인합니다.');
   process.exit(0);

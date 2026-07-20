@@ -212,7 +212,47 @@ describe('rekeyOwner — IdP 변경 복구', () => {
   it('owners()가 소유자별 행 수를 알려준다 (어느 sub에 묶였는지 찾는 용도)', () => {
     store.sync(OLD, { cursor: 0, cells: [cell('2026-07-20', 'r1', true, 100), cell('2026-07-21', 'r1', true, 100)] });
     store.sync(NEW, { cursor: 0, cells: [cell('2026-07-20', 'r1', true, 100)] });
-    expect(store.owners()).toEqual([{ owner: OLD, n: 2 }, { owner: NEW, n: 1 }]);
+    expect(store.owners()).toEqual([
+      { owner: OLD, cells: 2, docs: 0 },
+      { owner: NEW, cells: 1, docs: 0 },
+    ]);
+  });
+
+  it('docs만 있는 소유자도 찾아진다 — 루틴만 만들고 아직 체크를 안 한 경우', () => {
+    // cells만 세면 이런 소유자는 복구 대상으로 발견되지 않는다.
+    store.sync(OLD, { cursor: 0, docs: [{ key: 'routines', value: ['a'], ts: 100 }] });
+    expect(store.owners()).toEqual([{ owner: OLD, cells: 0, docs: 1 }]);
+  });
+
+  it('양쪽에 같은 칸이 있어도 병합한다 — 옮기기만 하면 UNIQUE 제약으로 복구가 통째로 실패한다', () => {
+    // 사용자는 보통 새 신원으로 앱을 좀 써본 뒤에야 데이터가 비었다는 걸 안다.
+    store.sync(OLD, { cursor: 0, cells: [cell('2026-07-20', 'r1', 'old-newer', 300), cell('2026-07-19', 'r1', 'old-only', 100)] });
+    store.sync(NEW, { cursor: 0, cells: [cell('2026-07-20', 'r1', 'new-older', 200)] });
+
+    expect(() => store.rekeyOwner(OLD, NEW)).not.toThrow();
+
+    const after = store.sync(NEW, { cursor: 0 });
+    // 충돌한 칸은 LWW로 ts가 큰 쪽(옛 신원의 300)이 이긴다.
+    expect(find(after, '2026-07-20', 'r1').value).toBe('old-newer');
+    // 충돌하지 않은 칸도 함께 넘어온다.
+    expect(find(after, '2026-07-19', 'r1').value).toBe('old-only');
+    expect(store.sync(OLD, { cursor: 0 }).cells).toEqual([]);
+  });
+
+  it('충돌 시 새 신원 값이 더 최신이면 그쪽이 남는다', () => {
+    store.sync(OLD, { cursor: 0, cells: [cell('2026-07-20', 'r1', 'old-older', 100)] });
+    store.sync(NEW, { cursor: 0, cells: [cell('2026-07-20', 'r1', 'new-newer', 500)] });
+
+    store.rekeyOwner(OLD, NEW);
+    expect(find(store.sync(NEW, { cursor: 0 }), '2026-07-20', 'r1').value).toBe('new-newer');
+  });
+
+  it('docs 충돌도 같은 규칙으로 병합된다', () => {
+    store.sync(OLD, { cursor: 0, docs: [{ key: 'routines', value: ['old'], ts: 300 }] });
+    store.sync(NEW, { cursor: 0, docs: [{ key: 'routines', value: ['new'], ts: 100 }] });
+
+    expect(() => store.rekeyOwner(OLD, NEW)).not.toThrow();
+    expect(store.sync(NEW, { cursor: 0 }).docs.find((d) => d.key === 'routines').value).toEqual(['old']);
   });
 });
 
