@@ -125,3 +125,70 @@ describe('App 찬스 3-상태 (#16)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('남은 찬스가 없어요');
   });
 });
+
+describe('App 기타찬스 UI (#16)', () => {
+  // 설정 탭 → 루틴 이름 클릭 → 편집 폼(기타찬스 섹션은 편집 모드에서만 뜬다)
+  const openEditForm = () => {
+    fireEvent.click(screen.getByText('설정'));
+    fireEvent.click(screen.getByText('운동'));
+  };
+
+  beforeEach(() => {
+    localStorage.setItem(STORAGE_KEY, serializeState({ routines: [routine], checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 }));
+  });
+
+  it('사유를 적어야 기타찬스가 추가된다 — 빈 사유는 거부하고 안내한다', () => {
+    render(<App />);
+    openEditForm();
+
+    const input = screen.getByLabelText('기타찬스 사유');
+
+    // 빈 사유 → 추가되지 않고 경고
+    fireEvent.click(screen.getByText('추가'));
+    expect(screen.getByRole('alert')).toHaveTextContent('사유를 입력해야');
+
+    // 공백만 있어도 거부(trim)
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.click(screen.getByText('추가'));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    // 사유가 있으면 추가되고 목록에 사유가 보인다
+    fireEvent.change(input, { target: { value: '장염으로 앓아누움' } });
+    fireEvent.click(screen.getByText('추가'));
+    expect(screen.getByText('장염으로 앓아누움')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(input.value).toBe(''); // 입력창은 비워진다
+  });
+
+  it('쓰지 않은 기타찬스는 삭제할 수 있다', () => {
+    render(<App />);
+    openEditForm();
+
+    fireEvent.change(screen.getByLabelText('기타찬스 사유'), { target: { value: '출장' } });
+    fireEvent.click(screen.getByText('추가'));
+    expect(screen.getByText('출장')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('기타찬스 삭제 — 출장'));
+    expect(screen.queryByText('출장')).not.toBeInTheDocument();
+  });
+
+  it('이미 사용한 기타찬스는 사용일을 보여주고 삭제 버튼을 내린다', () => {
+    // 주·월 찬스를 소진하고 b1까지 쓴 상태를 만들어 둔다.
+    const key = (d) => `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+    const today = new Date();
+    const usedDay = key(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+    localStorage.setItem(STORAGE_KEY, serializeState({
+      routines: [routine],
+      checks: { [usedDay]: { r1: { chance: 'bonus', bonusId: 'b1' } } },
+      bonusChances: { r1: [{ id: 'b1', reason: '장염', createdAt: '2026-07-01T00:00:00.000Z' }] },
+      weekStart: 0,
+      notif: true,
+      remindHour: 21,
+    }));
+    render(<App />);
+    openEditForm();
+
+    expect(screen.getByText(`${usedDay}에 사용함`)).toBeInTheDocument();
+    expect(screen.queryByLabelText('기타찬스 삭제 — 장염')).not.toBeInTheDocument();
+  });
+});

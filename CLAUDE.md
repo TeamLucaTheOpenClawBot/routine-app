@@ -46,7 +46,8 @@
   라이브 목록에서 파생하고, 루틴 삭제 시 `purgeRoutineChecks()`로 그 체크를 함께 지운다 —
   고아 체크가 남아 재활용된 id에 옛 기록이 붙는 것을 막는다(기타찬스는 `purgeRoutineBonuses()`).
   설정의 "데이터 초기화"로 기록을 지우고 기본 상태로 되돌린다.
-- **찬스**(#16 · 로직 완료): 체크가 3-상태다 — 안함 → 했음 → 찬스(`cycleCheck`). 체크 값은
+- **찬스**(#16 완료 · PR #23 로직 · #24 토글/배지 · #25 기타찬스): 체크가 3-상태다 —
+  안함 → 했음 → 찬스(`cycleCheck`). 체크 값은
   `true`(했음) 또는 `{ chance: 'weekly'|'monthly'|'bonus', bonusId? }`(찬스).
   **잔여를 카운터로 저장하지 않고 사용 기록에서 파생한다**(`weeklyChanceLeft`/`monthlyChanceLeft`/
   `bonusChancesLeft`) — 사용이 사라지면 잔여가 저절로 복원되므로 취소·리필이 공짜이고,
@@ -55,6 +56,11 @@
   **집계는 goalType으로 분기**한다(`weekCount`): atLeast는 찬스를 +1로, atMost는 카운트에서 제외.
   이 분기가 없으면 줄이는 습관에서 찬스가 +1로 새어 목표를 해친다.
   `weekCount(weekStart, routine, checks)`는 routineId가 아니라 **routine 객체**를 받는다(분기 때문).
+  뷰는 `checks`를 직접 판정하지 않는다 — 상태 조회는 `checkState()`, 보유는 `chanceSummary()`,
+  기타찬스 목록은 `bonusChanceRows()`를 쓴다(`Boolean(checks[k]?.[id])`로 보면 찬스가 '했음'과
+  구분되지 않는다). 찬스는 앰버 `--color-chance`지만 **색만으로 구분하지 않는다** — 글리프도
+  ✓/★로 다르다(색각 이상·흑백 대비). 기타찬스는 사유 필수이고, **이미 쓴 것은 삭제하지 않는다**
+  (지우면 그 날 찬스 체크가 참조를 잃는다 → 목록에서 '사용함'으로 표시).
 - **레이아웃**(#3 완료): 목업 폰 프레임·가짜 상태바 제거. 앱 셸은 `100dvh` 세로 flex 컬럼으로
   뷰포트를 채우고 데스크톱에선 `max-width: 480px` 중앙 정렬(바깥은 `#070b14` 캔버스). `index.html`은
   `viewport-fit=cover`. 스크롤 컨테이너는 `flex:1;min-height:0`(flex 스크롤), 캘린더 요일 헤더는

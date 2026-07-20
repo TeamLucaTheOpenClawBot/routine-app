@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   achieved,
   achievementRate,
+  bonusChanceRows,
   bonusChancesLeft,
   chanceSummary,
   chanceUsages,
@@ -511,5 +512,24 @@ describe('찬스 — 스키마 v2 마이그레이션', () => {
     const parsed = parseState(raw);
     expect(parsed.checks).toEqual({}); // 알 수 없는 종류, bonusId 없는 bonus 모두 제거
     expect(parsed.bonusChances.r1.map((b) => b.id)).toEqual(['b2']); // 빈 사유 제거
+  });
+});
+
+describe('찬스 — 기타찬스 목록 파생', () => {
+  const bonuses = [
+    { id: 'b1', reason: '장염', createdAt: '2026-07-01T00:00:00.000Z' },
+    { id: 'b2', reason: '출장', createdAt: '2026-07-05T00:00:00.000Z' },
+  ];
+
+  it('사용한 기타찬스에 사용일을 붙이고, 안 쓴 것은 null', () => {
+    const checks = { '2026-07-16': { r1: { chance: 'bonus', bonusId: 'b2' } } };
+    expect(bonusChanceRows(checks, 'r1', bonuses)).toEqual([
+      { id: 'b1', reason: '장염', createdAt: '2026-07-01T00:00:00.000Z', usedOn: null },
+      { id: 'b2', reason: '출장', createdAt: '2026-07-05T00:00:00.000Z', usedOn: '2026-07-16' },
+    ]);
+  });
+
+  it('목록이 없으면 빈 배열', () => {
+    expect(bonusChanceRows({}, 'r1', undefined)).toEqual([]);
   });
 });
