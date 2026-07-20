@@ -107,10 +107,13 @@ const server = createServer(async (req, res) => {
     }
     if (body.error) return json(res, 400, { error: body.error });
 
-    // 소유자는 요청 본문이 아니라 **검증된 신원**에서 가져온다. 본문에서 받으면
-    // 남의 데이터를 지목할 수 있다.
-    const owner = auth.email ?? auth.sub;
-    if (!owner) return json(res, 401, { error: 'unauthorized', reason: 'no_identity' });
+    // 소유자는 요청 본문이 아니라 **검증된 신원**에서 가져온다(본문에서 받으면 남의 데이터를
+    // 지목할 수 있다). 키는 email이 아니라 **sub**다 — 이메일은 바뀌고 재할당될 수 있어서,
+    // 재할당된 주소로 로그인한 다른 사람이 앞사람 데이터를 읽고 덮어쓸 수 있다.
+    // 반대급부로 IdP를 바꾸면 sub가 달라져 데이터가 사라진 것처럼 보일 수 있는데,
+    // 그건 재키잉으로 복구한다(절차는 deploy/README.md).
+    const owner = auth.sub;
+    if (!owner) return json(res, 401, { error: 'unauthorized', reason: 'no_subject' });
 
     try {
       return json(res, 200, store.sync(owner, body.value));
