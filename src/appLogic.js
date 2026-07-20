@@ -139,6 +139,17 @@ export function bonusChancesLeft(checks, routineId, bonuses) {
   return (bonuses ?? []).filter((b) => !usedIds.has(b.id));
 }
 
+// 기타찬스 목록에 사용 여부·사용일을 붙인다(등록 순). 목록 UI가 "어느 찬스를 언제 썼는지"를
+// 보여주려면 필요한 파생값이라 뷰가 아니라 여기서 계산한다.
+export function bonusChanceRows(checks, routineId, bonuses) {
+  const used = new Map(
+    chanceUsages(checks, routineId)
+      .filter((u) => u.chance === CHANCE_BONUS)
+      .map((u) => [u.bonusId, u.dateKey]),
+  );
+  return (bonuses ?? []).map((b) => ({ ...b, usedOn: used.get(b.id) ?? null }));
+}
+
 // 보유 현황 배지용 요약.
 export function chanceSummary(checks, routineId, date, bonuses, weekStart = 0) {
   return {

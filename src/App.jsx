@@ -16,6 +16,8 @@ import {
   defaultRoutines,
   makeNewRoutine,
   nextRoutineId,
+  nextBonusId,
+  bonusChanceRows,
   purgeRoutineChecks,
   purgeRoutineBonuses,
   cycleCheck,
@@ -265,6 +267,30 @@ function App() {
     if (blocked) setNotice(`남은 찬스가 없어요 — ${routine.name}`);
   };
 
+  // 기타찬스는 사유가 필수다 — 빈 사유는 추가하지 않고 false를 돌려 폼이 안내하게 한다.
+  const addBonusChance = (routineId, reason) => {
+    const trimmed = reason.trim();
+    if (!trimmed) return false;
+    const createdAt = new Date().toISOString(); // 업데이터 밖에서 만든다(순수성 유지)
+    setBonusChances((prev) => {
+      const list = prev[routineId] ?? [];
+      return { ...prev, [routineId]: [...list, { id: nextBonusId(list), reason: trimmed, createdAt }] };
+    });
+    return true;
+  };
+
+  // 이미 쓴 기타찬스는 지우지 않는다 — 지우면 그 날의 찬스 체크가 참조를 잃어
+  // "무엇으로 킵했는지"를 설명할 수 없게 된다(폼에서 삭제 버튼을 내리고 '사용함'으로 표시).
+  const deleteBonusChance = (routineId, bonusId) => {
+    setBonusChances((prev) => {
+      const list = (prev[routineId] ?? []).filter((b) => b.id !== bonusId);
+      const out = { ...prev };
+      if (list.length) out[routineId] = list;
+      else delete out[routineId];
+      return out;
+    });
+  };
+
   const updateRoutine = (routineId, patch) => {
     setRoutines((prev) => prev.map((r) => (r.id === routineId ? { ...r, ...patch } : r)));
   };
@@ -399,6 +425,10 @@ function App() {
             onSetGoalType={setGoalType}
             onAdjustGoal={adjustGoal}
             onDelete={deleteRoutine}
+            bonuses={bonusChanceRows(checks, editing.id, bonusChances[editing.id])}
+            chances={chanceSummary(checks, editing.id, today, bonusChances[editing.id], weekStart)}
+            onAddBonus={addBonusChance}
+            onDeleteBonus={deleteBonusChance}
           />
         )}
       </div>
@@ -707,7 +737,64 @@ function CheckSheet({ dayKey, routines, checks, onToggle, onClose }) {
   );
 }
 
-function RoutineForm({ routine, mode, canDelete, onCancel, onSave, onUpdate, onSetGoalType, onAdjustGoal, onDelete }) {
+// 기타찬스 관리 — 사유가 필수다. 이미 쓴 찬스는 삭제하지 않고 '사용함'으로 표시한다
+// (지우면 그 날의 찬스 체크가 참조를 잃어 무엇으로 킵했는지 설명할 수 없다).
+function BonusChanceSection({ routineId, bonuses, chances, onAdd, onDelete }) {
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState(false);
+
+  const submit = () => {
+    if (onAdd(routineId, reason)) {
+      setReason('');
+      setError(false);
+    } else {
+      setError(true);
+    }
+  };
+
+  return (
+    <>
+      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--color-muted)', margin: '22px 0 8px' }}>찬스</div>
+      <div style={{ background: 'var(--color-bg)', borderRadius: 12, padding: '11px 14px', marginBottom: 10, fontSize: 13, fontWeight: 700, color: 'var(--color-muted)' }}>
+        남은 찬스 <span style={{ color: 'var(--color-chance)' }}>주 {chances.weekly} · 월 {chances.monthly} · 기타 {chances.bonus}</span>
+        <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 3, color: 'var(--color-field-border)' }}>주·월 찬스는 주/달이 바뀌면 자동으로 돌아와요 (각 1개, 쌓이지 않음)</div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 7 }}>
+        <input
+          value={reason}
+          onChange={(e) => { setReason(e.target.value); if (error) setError(false); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          placeholder="기타찬스 사유 (필수)"
+          aria-label="기타찬스 사유"
+          aria-invalid={error || undefined}
+          style={{ flex: 1, minWidth: 0, background: 'var(--color-bg)', border: `1px solid ${error ? 'var(--color-expired-text)' : 'var(--color-field-border)'}`, borderRadius: 12, padding: '11px 13px', fontSize: 14.5, fontWeight: 600, color: 'var(--color-text)' }}
+        />
+        <button type="button" onClick={submit} style={{ cursor: 'pointer', flex: '0 0 auto', padding: '0 16px', borderRadius: 12, background: 'var(--color-chance)', color: '#1a1206', fontSize: 14, fontWeight: 800 }}>추가</button>
+      </div>
+      {error && <div role="alert" style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-expired-text)', marginTop: 6 }}>사유를 입력해야 기타찬스를 추가할 수 있어요</div>}
+
+      {bonuses.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+          {bonuses.map((b) => (
+            <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--color-bg)', borderRadius: 12, padding: '10px 13px' }}>
+              <span aria-hidden style={{ color: b.usedOn ? 'var(--color-field-border)' : 'var(--color-chance)', fontSize: 13, fontWeight: 800 }}>★</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: b.usedOn ? 'var(--color-muted)' : 'var(--color-text)', textDecoration: b.usedOn ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.reason}</div>
+                {b.usedOn && <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--color-field-border)', marginTop: 1 }}>{b.usedOn}에 사용함</div>}
+              </div>
+              {!b.usedOn && (
+                <button type="button" onClick={() => onDelete(routineId, b.id)} aria-label={`기타찬스 삭제 — ${b.reason}`} style={{ cursor: 'pointer', flex: '0 0 auto', width: 28, height: 28, borderRadius: '50%', background: 'var(--color-surface)', color: 'var(--color-muted)', fontSize: 14, fontWeight: 700 }}>✕</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function RoutineForm({ routine, mode, canDelete, onCancel, onSave, onUpdate, onSetGoalType, onAdjustGoal, onDelete, bonuses, chances, onAddBonus, onDeleteBonus }) {
   const isAtLeast = routine.goalType === 'atLeast';
   const minCount = isAtLeast ? 1 : 0;
   const seg = (on) => ({ flex: 1, textAlign: 'center', padding: '11px 0', borderRadius: 9, fontSize: 14.5, fontWeight: on ? 800 : 700, cursor: 'pointer', background: on ? 'var(--color-primary)' : 'transparent', color: on ? '#fff' : 'var(--color-muted)' });
@@ -765,6 +852,11 @@ function RoutineForm({ routine, mode, canDelete, onCancel, onSave, onUpdate, onS
           </div>
           <button type="button" onClick={() => onAdjustGoal(routine.id, 1)} style={stepStyle(routine.goalCount < 7)}>+</button>
         </div>
+
+        {/* 새 루틴은 저장 전이라 찬스를 붙일 대상이 없다 → 편집 모드에서만 노출 */}
+        {mode === 'edit' && (
+          <BonusChanceSection routineId={routine.id} bonuses={bonuses} chances={chances} onAdd={onAddBonus} onDelete={onDeleteBonus} />
+        )}
 
         {canDelete && (
           <button type="button" onClick={() => onDelete(routine.id)} style={{ cursor: 'pointer', width: '100%', marginTop: 28, minHeight: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 14, background: 'var(--color-expired-bg)', color: 'var(--color-expired-text)', fontSize: 15, fontWeight: 800 }}>루틴 삭제</button>
