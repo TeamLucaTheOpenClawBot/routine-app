@@ -17,6 +17,7 @@ import {
   makeNewRoutine,
   nextRoutineId,
   purgeRoutineChecks,
+  purgeRoutineBonuses,
   finalizedResults,
   achievementRate,
   currentStreak,
@@ -92,6 +93,8 @@ function App() {
   const [today, setToday] = useState(() => startOfToday());
   const [routines, setRoutines] = useState(() => persisted?.routines ?? defaultRoutines());
   const [checks, setChecks] = useState(() => persisted?.checks ?? {});
+  // 루틴별 기타찬스 목록 { routineId: [{ id, reason, createdAt }] }. 추가/사용 UI는 #16 후속 PR.
+  const [bonusChances, setBonusChances] = useState(() => persisted?.bonusChances ?? {});
   const [activeTab, setActiveTab] = useState('today');
   const [sheetDay, setSheetDay] = useState(null);
   const [form, setForm] = useState(null); // { mode: 'add'|'edit', id }
@@ -102,8 +105,8 @@ function App() {
 
   // 상태 변경 시 localStorage에 동기화(오늘/탭 등 뷰 전용 상태는 저장하지 않는다).
   useEffect(() => {
-    saveState({ routines, checks, weekStart, notif, remindHour });
-  }, [routines, checks, weekStart, notif, remindHour]);
+    saveState({ routines, checks, bonusChances, weekStart, notif, remindHour });
+  }, [routines, checks, bonusChances, weekStart, notif, remindHour]);
 
   const visibleRoutines = useMemo(() => routines.filter((r) => r.visible), [routines]);
   const isEmpty = routines.length === 0;
@@ -157,7 +160,7 @@ function App() {
       const achievedIds = new Set();
       const chips = [];
       visibleRoutines.forEach((routine) => {
-        if (finalized && achieved(routine, weekCount(ws, routine.id, checks))) {
+        if (finalized && achieved(routine, weekCount(ws, routine, checks))) {
           achievedIds.add(routine.id);
           chips.push(routine);
         }
@@ -190,7 +193,7 @@ function App() {
     if (!visibleRoutines.length) return '표시된 루틴이 없어요';
     let n = 0;
     visibleRoutines.forEach((routine) => {
-      if (achieved(routine, weekCount(currentWeekStart, routine.id, checks))) n += 1;
+      if (achieved(routine, weekCount(currentWeekStart, routine, checks))) n += 1;
     });
     return `이번 주 ${n}/${visibleRoutines.length} 순항 중`;
   }, [checks, currentWeekStart, visibleRoutines]);
@@ -199,7 +202,7 @@ function App() {
     () =>
       visibleRoutines.map((routine) => {
         const done = Boolean(checks[todayKey]?.[routine.id]);
-        const cnt = weekCount(currentWeekStart, routine.id, checks);
+        const cnt = weekCount(currentWeekStart, routine, checks);
         const prog = routine.goalType === 'atLeast' ? `이번 주 ${cnt}/${routine.goalCount}회` : `이번 주 ${cnt}회 · 한도 ${routine.goalCount}`;
         return { routine, done, prog };
       }),
@@ -220,7 +223,7 @@ function App() {
     });
     let meet = 0;
     visibleRoutines.forEach((routine) => {
-      if (achieved(routine, weekCount(currentWeekStart, routine.id, checks))) meet += 1;
+      if (achieved(routine, weekCount(currentWeekStart, routine, checks))) meet += 1;
     });
     const bestStreak = perRoutine.reduce((m, x) => Math.max(m, x.streak), 0);
     const avg = perRoutine.length ? Math.round(perRoutine.reduce((s, x) => s + x.pct, 0) / perRoutine.length) : 0;
@@ -296,6 +299,7 @@ function App() {
     setRoutines((prev) => prev.filter((r) => r.id !== routineId));
     // 체크도 함께 정리 — 고아 기록이 남아 재활용된 id로 새 루틴에 붙는 것을 막는다.
     setChecks((prev) => purgeRoutineChecks(prev, routineId));
+    setBonusChances((prev) => purgeRoutineBonuses(prev, routineId));
     setForm(null);
   };
 
@@ -310,6 +314,7 @@ function App() {
     clearState();
     setRoutines(defaultRoutines());
     setChecks({});
+    setBonusChances({});
     setWeekStart(0);
     setNotif(true);
     setForm(null);

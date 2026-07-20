@@ -36,12 +36,25 @@
 - **상태/영속화**(#2 완료): `localStorage`에 영속화한다. `appLogic.js`의 순수 함수
   `serializeState`/`parseState`(스키마 `version` 필드 + 손상·구버전 방어)로 직렬화/검증하고,
   얇은 래퍼 `loadState`/`saveState`/`clearState`(SSR·프라이빗 모드 방어, storage 주입 가능)가
-  실제 저장소를 만진다. App은 초기 1회 로드 → `useEffect`로 변경 시 동기화한다. 저장 키 `routine-app:v1`.
+  실제 저장소를 만진다. App은 초기 1회 로드 → `useEffect`로 변경 시 동기화한다. 저장 키 `routine-app:v2`
+  (#16). **v1 키는 지우지 않는다** — `parseState`는 version이 다르면 null을 돌려 기본값으로 폴백하므로,
+  같은 키를 덮어썼다면 이미지 롤백 시 기록이 소실된다. 키를 나눠 구버전이 v1을 계속 읽게 둔다.
+  `loadState`는 v2 → 없으면 v1 순으로 읽고, `clearState`는 **두 키를 모두** 지운다(v2만 지우면
+  v1 폴백이 옛 기록을 되살려 "데이터 초기화"가 무효가 된다).
   **첫 방문은 기본 루틴 `defaultRoutines()`(운동·음주 2개)로 시작**(프로토타입 데모 시드
   `buildInitialRoutines`/`createSeedChecks`/물·독서 제거됨). 새 루틴 id는 `nextRoutineId()`로
   라이브 목록에서 파생하고, 루틴 삭제 시 `purgeRoutineChecks()`로 그 체크를 함께 지운다 —
-  고아 체크가 남아 재활용된 id에 옛 기록이 붙는 것을 막는다. 설정의 "데이터 초기화"로 기록을
-  지우고 기본 상태로 되돌린다.
+  고아 체크가 남아 재활용된 id에 옛 기록이 붙는 것을 막는다(기타찬스는 `purgeRoutineBonuses()`).
+  설정의 "데이터 초기화"로 기록을 지우고 기본 상태로 되돌린다.
+- **찬스**(#16 · 로직 완료): 체크가 3-상태다 — 안함 → 했음 → 찬스(`cycleCheck`). 체크 값은
+  `true`(했음) 또는 `{ chance: 'weekly'|'monthly'|'bonus', bonusId? }`(찬스).
+  **잔여를 카운터로 저장하지 않고 사용 기록에서 파생한다**(`weeklyChanceLeft`/`monthlyChanceLeft`/
+  `bonusChancesLeft`) — 사용이 사라지면 잔여가 저절로 복원되므로 취소·리필이 공짜이고,
+  주/월 경계에 자정 타이머가 필요 없다('오늘' 주입 패턴과 동일한 이유). 소급 체크도 그 날짜가
+  속한 주/월로 자연히 판정된다. 소진 순서는 주 → 월 → 기타(오래된 것부터, `pickChanceSource`).
+  **집계는 goalType으로 분기**한다(`weekCount`): atLeast는 찬스를 +1로, atMost는 카운트에서 제외.
+  이 분기가 없으면 줄이는 습관에서 찬스가 +1로 새어 목표를 해친다.
+  `weekCount(weekStart, routine, checks)`는 routineId가 아니라 **routine 객체**를 받는다(분기 때문).
 - **레이아웃**(#3 완료): 목업 폰 프레임·가짜 상태바 제거. 앱 셸은 `100dvh` 세로 flex 컬럼으로
   뷰포트를 채우고 데스크톱에선 `max-width: 480px` 중앙 정렬(바깥은 `#070b14` 캔버스). `index.html`은
   `viewport-fit=cover`. 스크롤 컨테이너는 `flex:1;min-height:0`(flex 스크롤), 캘린더 요일 헤더는
