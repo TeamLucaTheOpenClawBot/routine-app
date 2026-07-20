@@ -130,3 +130,51 @@ describe('sync — 방어', () => {
     expect(store.sync(ME, { cursor: 'nope', cells: 'nope', docs: 'nope' }).cells).toEqual([]);
   });
 });
+
+describe('sync — 진 쓰기도 승자를 돌려받는다 (수렴)', () => {
+  // 이전 테스트들이 충돌을 전부 cursor:0으로 확인해 이 결함을 가렸다.
+  // cursor가 전진한 상태에서 지는 쓰기를 밀면, 승자가 응답에 실려야 클라이언트가 수렴한다.
+  it('커서가 전진한 뒤 오래된 ts를 밀어도 서버 값이 응답에 실린다', () => {
+    const first = store.sync(ME, { cursor: 0, cells: [cell('2026-07-20', 'r1', 'winner', 100)] });
+
+    const out = store.sync(ME, { cursor: first.cursor, cells: [cell('2026-07-20', 'r1', 'loser', 99)] });
+
+    // 비어 있으면 클라이언트는 자기 값이 졌다는 걸 모른 채 영구히 분기한다.
+    expect(find(out, '2026-07-20', 'r1')).toBeDefined();
+    expect(find(out, '2026-07-20', 'r1').value).toBe('winner');
+    expect(find(out, '2026-07-20', 'r1').ts).toBe(100);
+  });
+
+  it('같은 ts 재전송도 승자를 돌려받는다', () => {
+    const first = store.sync(ME, { cursor: 0, cells: [cell('2026-07-20', 'r1', 'first', 100)] });
+    const out = store.sync(ME, { cursor: first.cursor, cells: [cell('2026-07-20', 'r1', 'second', 100)] });
+    expect(find(out, '2026-07-20', 'r1').value).toBe('first');
+  });
+
+  it('docs도 마찬가지다', () => {
+    const first = store.sync(ME, { cursor: 0, docs: [{ key: 'routines', value: ['winner'], ts: 100 }] });
+    const out = store.sync(ME, { cursor: first.cursor, docs: [{ key: 'routines', value: ['loser'], ts: 50 }] });
+
+    expect(out.docs.find((d) => d.key === 'routines')?.value).toEqual(['winner']);
+  });
+});
+
+describe('sync — value 누락은 삭제가 아니다', () => {
+  it('value가 없는 항목은 버린다 — 직렬화 버그가 삭제로 둔갑하지 않게', () => {
+    const first = store.sync(ME, { cursor: 0, cells: [cell('2026-07-20', 'r1', true, 100)] });
+
+    // value 키 자체가 빠진 요청(더 최신 ts) — 예전 구현은 이걸 툼스톤으로 만들었다.
+    const out = store.sync(ME, { cursor: first.cursor, cells: [{ dateKey: '2026-07-20', routineId: 'r1', ts: 200 }] });
+
+    const full = store.sync(ME, { cursor: 0 });
+    expect(find(full, '2026-07-20', 'r1').value).toBe(true); // 살아 있어야 한다
+    expect(out.cells.every((c) => c.value !== null)).toBe(true);
+  });
+
+  it('명시적 null은 여전히 삭제로 인정된다', () => {
+    store.sync(ME, { cursor: 0, cells: [cell('2026-07-20', 'r1', true, 100)] });
+    store.sync(ME, { cursor: 0, cells: [cell('2026-07-20', 'r1', null, 200)] });
+    const full = store.sync(ME, { cursor: 0 });
+    expect(find(full, '2026-07-20', 'r1').value).toBe(null);
+  });
+});

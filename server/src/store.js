@@ -69,8 +69,10 @@ function normalizeCells(input) {
     if (!c || typeof c !== 'object') continue;
     if (typeof c.dateKey !== 'string' || typeof c.routineId !== 'string') continue;
     if (!isPlainTs(c.ts)) continue;
-    // value === null은 삭제를 뜻하므로 유효하다.
-    out.push({ dateKey: c.dateKey, routineId: c.routineId, value: c.value ?? null, ts: c.ts });
+    // value가 아예 없는 항목은 **버린다**. `?? null`로 뭉개면 직렬화·outbox 버그로 value가
+    // 빠진 요청이 삭제로 둔갑해 다른 기기까지 지워버린다. 삭제는 명시적 null만 인정한다.
+    if (c.value === undefined) continue;
+    out.push({ dateKey: c.dateKey, routineId: c.routineId, value: c.value, ts: c.ts });
   }
   return out;
 }
@@ -91,20 +93,26 @@ export function createStore(db) {
   const nextSeq = db.prepare('SELECT next_seq FROM meta WHERE id = 1');
   const bumpSeq = db.prepare('UPDATE meta SET next_seq = ? WHERE id = 1');
 
-  // LWW: 기존 ts보다 큰 경우에만 덮어쓴다. 같은 ts면 유지(재전송이 순서를 뒤집지 않게).
+  // LWW: 값·ts는 기존보다 새로울 때만 바뀐다. 같은 ts면 유지(재전송이 순서를 뒤집지 않게).
+  //
+  // **seq는 져도 항상 올린다.** 갱신을 통째로 건너뛰면 그 행의 seq가 그대로라 다음
+  // `seq > cursor` 조회에 안 잡히고, 커서만 전진한 클라이언트는 자기 쓰기가 졌다는 사실을
+  // 영영 알지 못해 영구히 분기한다. seq를 올려두면 승자가 응답에 실려 돌아가 수렴한다.
   const putCell = db.prepare(`
     INSERT INTO cells (owner, date_key, routine_id, value, ts, seq)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(owner, date_key, routine_id) DO UPDATE SET
-      value = excluded.value, ts = excluded.ts, seq = excluded.seq
-    WHERE excluded.ts > cells.ts
+      value = CASE WHEN excluded.ts > cells.ts THEN excluded.value ELSE cells.value END,
+      ts    = CASE WHEN excluded.ts > cells.ts THEN excluded.ts    ELSE cells.ts    END,
+      seq   = excluded.seq
   `);
   const putDoc = db.prepare(`
     INSERT INTO docs (owner, key, value, ts, seq)
     VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(owner, key) DO UPDATE SET
-      value = excluded.value, ts = excluded.ts, seq = excluded.seq
-    WHERE excluded.ts > docs.ts
+      value = CASE WHEN excluded.ts > docs.ts THEN excluded.value ELSE docs.value END,
+      ts    = CASE WHEN excluded.ts > docs.ts THEN excluded.ts    ELSE docs.ts    END,
+      seq   = excluded.seq
   `);
   const cellsSince = db.prepare('SELECT date_key, routine_id, value, ts, seq FROM cells WHERE owner = ? AND seq > ? ORDER BY seq');
   const docsSince = db.prepare('SELECT key, value, ts, seq FROM docs WHERE owner = ? AND seq > ? ORDER BY seq');
