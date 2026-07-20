@@ -50,5 +50,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.js',
+    // 서버 코드(server/)는 node 환경에서 돈다 — jsdom을 씌울 이유가 없다.
+    environmentMatchGlobs: [['server/**', 'node']],
   },
 });

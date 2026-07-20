@@ -7,6 +7,7 @@
 
 import { createServer } from 'node:http';
 import { createJwksCache, extractAccessToken, verifyWithRotation } from './access.js';
+import { createStore, openDatabase } from './store.js';
 
 const PORT = Number(process.env.PORT ?? 8081);
 const TEAM_DOMAIN = process.env.ACCESS_TEAM_DOMAIN?.replace(/\/+$/, '');
@@ -23,6 +24,39 @@ if (!DEV_NO_AUTH && (!TEAM_DOMAIN || !AUD)) {
 if (DEV_NO_AUTH) console.warn('⚠️  DEV_NO_AUTH=1 — 인증을 건너뜁니다. 로컬 개발 전용입니다.');
 
 const getJwks = TEAM_DOMAIN ? createJwksCache({ teamDomain: TEAM_DOMAIN }) : null;
+
+// DB 파일은 볼륨에 둔다(컨테이너 교체에도 남아야 한다). 미지정 시 메모리 — 로컬 개발용.
+const store = createStore(openDatabase(process.env.DB_PATH ?? ':memory:'));
+
+// 본문 상한. 없으면 큰 요청 하나로 메모리를 밀어올릴 수 있다.
+const MAX_BODY = 2 * 1024 * 1024;
+
+function readJsonBody(req) {
+  return new Promise((resolve) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY) {
+        // 여기서 destroy하면 클라이언트는 연결 끊김만 보고 이유를 모른다(413을 못 받는다).
+        // 읽기만 멈춰 두고(TCP 백프레셔) 호출자가 413을 보낸 뒤 끊게 한다.
+        req.pause();
+        resolve({ error: 'too_large' });
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (!chunks.length) return resolve({ value: {} });
+      try {
+        resolve({ value: JSON.parse(Buffer.concat(chunks).toString('utf8')) });
+      } catch {
+        resolve({ error: 'invalid_json' });
+      }
+    });
+    req.on('error', () => resolve({ error: 'read_failed' }));
+  });
+}
 
 const json = (res, status, body) => {
   const payload = JSON.stringify(body);
@@ -61,6 +95,40 @@ const server = createServer(async (req, res) => {
 
   if (req.method === 'GET' && url.pathname === '/api/me') {
     return json(res, 200, { email: auth.email, sub: auth.sub });
+  }
+
+  // 밀어넣기와 당겨오기를 한 왕복으로 처리한다 — 둘로 나누면 그 사이에 중간 상태가 생긴다.
+  if (req.method === 'POST' && url.pathname === '/api/sync') {
+    const body = await readJsonBody(req);
+    if (body.error === 'too_large') {
+      // 응답이 나간 뒤에 끊는다 — 먼저 끊으면 413이 전달되지 않는다.
+      res.on('finish', () => req.destroy());
+      return json(res, 413, { error: 'too_large', limit: MAX_BODY });
+    }
+    if (body.error) return json(res, 400, { error: body.error });
+
+    // 본문은 객체여야 한다. `null`·배열·숫자도 유효한 JSON이라 여기서 걸러야 한다 —
+    // 특히 `null`은 store.sync의 구조분해에서 던져 클라이언트 입력 오류가 500 + 스택
+    // 트레이스로 기록된다(진짜 장애를 찾을 때 노이즈가 된다).
+    const payload = body.value;
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      return json(res, 400, { error: 'invalid_body' });
+    }
+
+    // 소유자는 요청 본문이 아니라 **검증된 신원**에서 가져온다(본문에서 받으면 남의 데이터를
+    // 지목할 수 있다). 키는 email이 아니라 **sub**다 — 이메일은 바뀌고 재할당될 수 있어서,
+    // 재할당된 주소로 로그인한 다른 사람이 앞사람 데이터를 읽고 덮어쓸 수 있다.
+    // 반대급부로 IdP를 바꾸면 sub가 달라져 데이터가 사라진 것처럼 보일 수 있는데,
+    // 그건 재키잉으로 복구한다(절차는 deploy/README.md).
+    const owner = auth.sub;
+    if (!owner) return json(res, 401, { error: 'unauthorized', reason: 'no_subject' });
+
+    try {
+      return json(res, 200, store.sync(owner, payload));
+    } catch (err) {
+      console.error('sync 실패:', err);
+      return json(res, 500, { error: 'sync_failed' });
+    }
   }
 
   return json(res, 404, { error: 'not_found' });

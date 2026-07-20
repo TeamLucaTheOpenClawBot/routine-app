@@ -70,13 +70,19 @@ jobs:
           set -e
           test "$code" = "1"
           # 2) 설정이 있으면 뜨고, health는 무인증 200
+          # DB_PATH를 줘서 SQLite 경로까지 실제로 태운다 — node:sqlite가 이 이미지에서
+          # 로드되고 비특권 사용자가 /data에 쓸 수 있는지는 컨테이너로만 확인된다.
           docker run -d --rm -p 8081:8081 --name api \
             -e ACCESS_TEAM_DOMAIN=https://example.cloudflareaccess.com -e ACCESS_AUD=test-aud \
+            -e DB_PATH=/data/routine.db \
             routine-app-api:ci
           for i in $(seq 1 30); do curl -fsS http://localhost:8081/api/health >/dev/null 2>&1 && break; sleep 0.5; done
           curl -fsS http://localhost:8081/api/health | grep -q '"status":"ok"'
-          # 3) 토큰 없이 보호 경로에 접근하면 401
+          # 3) 토큰 없이 보호 경로에 접근하면 401 (동기화 엔드포인트 포함)
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/api/me)" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8081/api/sync)" = "401"
+          # 4) DB 파일이 실제로 생성됐는지 — 비특권 사용자의 /data 쓰기 권한 확인
+          docker exec api sh -c 'test -f /data/routine.db'
           docker stop api
 
       # 실제 컨테이너를 띄워 서빙과 PWA 캐시 규칙을 검증한다.

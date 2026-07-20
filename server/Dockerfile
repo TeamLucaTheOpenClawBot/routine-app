@@ -9,6 +9,12 @@ WORKDIR /app
 COPY package.json ./
 COPY src ./src
 
+# SQLite 파일이 놓일 자리. **USER 전환 전에** 만들고 소유권을 넘긴다 —
+# named volume은 최초 마운트 시 이미지의 해당 경로 소유권을 물려받으므로,
+# 여기서 잡아두지 않으면 root 소유가 되어 비특권 프로세스가 DB를 못 만든다.
+RUN mkdir -p /data && chown node:node /data
+VOLUME ["/data"]
+
 # 루트로 돌리지 않는다. node 이미지가 제공하는 비특권 사용자를 쓴다.
 USER node
 
