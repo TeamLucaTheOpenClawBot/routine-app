@@ -1,5 +1,8 @@
-# 1) 빌드 스테이지 — 정적 번들(dist) 생성
-FROM node:20-alpine AS build
+# 1) 빌드 스테이지 — 정적 번들(dist) 생성.
+# --platform=$BUILDPLATFORM: 산출물(dist)은 정적 파일이라 아키텍처 무관 → 타깃이 arm64여도
+# 이 스테이지는 러너 네이티브(amd64)로 돌린다. QEMU에서 npm ci/vite build를 에뮬레이션하면
+# 행이 걸려 런이 70분씩 소모됐다(#20). 멀티아치가 실제로 필요한 건 아래 nginx 스테이지뿐.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
