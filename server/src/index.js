@@ -6,7 +6,7 @@
 // 이 PR은 스캐폴드다 — 데이터 저장·동기화 엔드포인트는 #7의 다음 PR에서 붙인다.
 
 import { createServer } from 'node:http';
-import { createJwksCache, extractAccessToken, verifyAccessJwt } from './access.js';
+import { createJwksCache, extractAccessToken, verifyWithRotation } from './access.js';
 
 const PORT = Number(process.env.PORT ?? 8081);
 const TEAM_DOMAIN = process.env.ACCESS_TEAM_DOMAIN?.replace(/\/+$/, '');
@@ -38,14 +38,8 @@ async function authenticate(req) {
   if (DEV_NO_AUTH) return { ok: true, email: 'dev@localhost', sub: 'dev' };
   const token = extractAccessToken(req.headers);
   if (!token) return { ok: false, reason: 'missing_token' };
-  let jwks;
-  try {
-    jwks = await getJwks();
-  } catch {
-    // 키를 못 가져오면 통과시키지 않는다(fail-closed).
-    return { ok: false, reason: 'jwks_unavailable' };
-  }
-  return verifyAccessJwt(token, { jwks, aud: AUD, issuer: TEAM_DOMAIN });
+  // 키 회전 대응은 verifyWithRotation이 맡는다(모르는 kid면 1회 강제 갱신 후 재시도).
+  return verifyWithRotation(token, { getJwks, aud: AUD, issuer: TEAM_DOMAIN });
 }
 
 const server = createServer(async (req, res) => {

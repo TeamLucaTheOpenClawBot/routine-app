@@ -79,13 +79,30 @@ export function verifyAccessJwt(token, { jwks, aud, issuer, now = Date.now(), le
 
 // JWKS를 TTL 동안 캐시한다. Access는 키를 주기적으로 회전하므로 영구 캐시는 안 되고,
 // 매 요청 조회는 지연·레이트리밋 문제가 된다.
-export function createJwksCache({ teamDomain, ttlMs = 10 * 60 * 1000, fetchImpl = fetch, now = () => Date.now() }) {
+//
+// getJwks({ force: true })는 TTL을 무시하고 다시 받는다 — 키 회전 직후 새 kid로 서명된
+// 토큰이 오면 캐시엔 그 키가 없어 TTL이 끝날 때까지 전부 401이 되기 때문이다.
+// 단 **쿨다운을 둔다**: 강제 갱신을 무제한 허용하면 존재하지 않는 kid를 담은 요청을 반복해
+// 매번 외부 조회를 유발할 수 있다(우리 서버와 Cloudflare 양쪽에 부하).
+export function createJwksCache({
+  teamDomain,
+  ttlMs = 10 * 60 * 1000,
+  minRefreshMs = 60 * 1000,
+  fetchImpl = fetch,
+  now = () => Date.now(),
+}) {
   let cached = null;
   let fetchedAt = 0;
+  let lastForcedAt = -Infinity;
   let inflight = null;
 
-  return async function getJwks() {
-    if (cached && now() - fetchedAt < ttlMs) return cached;
+  return async function getJwks({ force = false } = {}) {
+    const t = now();
+    if (!force && cached && t - fetchedAt < ttlMs) return cached;
+    // 강제 갱신은 쿨다운 안에서 반복하지 않는다(캐시를 그대로 돌려주면 호출자는 그냥 거부한다).
+    if (force && cached && t - lastForcedAt < minRefreshMs) return cached;
+    if (force) lastForcedAt = t;
+
     // 동시 요청이 몰려도 조회는 한 번만.
     if (!inflight) {
       inflight = (async () => {
@@ -101,4 +118,25 @@ export function createJwksCache({ teamDomain, ttlMs = 10 * 60 * 1000, fetchImpl 
     }
     return inflight;
   };
+}
+
+// 검증 + 키 회전 대응. 모르는 kid면 JWKS를 한 번만 강제 갱신하고 재시도한다.
+// (Access가 키를 회전하면 새 kid로 서명된 토큰이 캐시 TTL 동안 전부 거부되는 것을 막는다.)
+export async function verifyWithRotation(token, { getJwks, aud, issuer, now = Date.now() }) {
+  let jwks;
+  try {
+    jwks = await getJwks();
+  } catch {
+    return fail('jwks_unavailable'); // 키를 못 받으면 통과시키지 않는다(fail-closed)
+  }
+
+  const first = verifyAccessJwt(token, { jwks, aud, issuer, now });
+  if (first.ok || first.reason !== 'unknown_kid') return first;
+
+  try {
+    jwks = await getJwks({ force: true });
+  } catch {
+    return fail('jwks_unavailable');
+  }
+  return verifyAccessJwt(token, { jwks, aud, issuer, now });
 }

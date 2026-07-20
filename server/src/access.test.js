@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign as cryptoSign, randomUUID } from 'node:crypto';
-import { createJwksCache, decodeJwt, extractAccessToken, verifyAccessJwt } from './access.js';
+import { createJwksCache, decodeJwt, extractAccessToken, verifyAccessJwt, verifyWithRotation } from './access.js';
 
 // 실제 RS256 서명으로 검증한다 — 서명 검사를 모킹하면 이 모듈에서 정작 중요한 부분이 안 덮인다.
 const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -141,5 +141,82 @@ describe('createJwksCache', () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 503 }));
     const get = createJwksCache({ teamDomain: ISS, fetchImpl, now: () => 0 });
     await expect(get()).rejects.toThrow('JWKS 조회 실패: 503');
+  });
+});
+
+describe('verifyWithRotation — 키 회전 대응', () => {
+  // 회전 시나리오: 캐시엔 옛 키만 있고, 토큰은 새 키(kid=new)로 서명돼 있다.
+  const rotated = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const NEW_KID = 'rotated-kid';
+  const newJwk = { ...rotated.publicKey.export({ format: 'jwk' }), kid: NEW_KID, alg: 'RS256', use: 'sig' };
+  const OLD_ONLY = { keys: [jwk] };
+  const AFTER_ROTATION = { keys: [jwk, newJwk] };
+  const rotatedToken = () => makeToken({ kid: NEW_KID, key: rotated.privateKey });
+
+  it('모르는 kid면 JWKS를 강제 갱신하고 재시도해 통과시킨다', async () => {
+    const getJwks = vi.fn(async ({ force } = {}) => (force ? AFTER_ROTATION : OLD_ONLY));
+    const out = await verifyWithRotation(rotatedToken(), { getJwks, aud: AUD, issuer: ISS, now: NOW });
+
+    expect(out.ok).toBe(true);
+    expect(getJwks).toHaveBeenCalledTimes(2);
+    expect(getJwks).toHaveBeenLastCalledWith({ force: true });
+  });
+
+  it('갱신해도 없는 kid면 거부한다 (무한 재시도 없음)', async () => {
+    const getJwks = vi.fn(async () => OLD_ONLY);
+    const out = await verifyWithRotation(makeToken({ kid: 'never-exists' }), { getJwks, aud: AUD, issuer: ISS, now: NOW });
+
+    expect(out).toEqual({ ok: false, reason: 'unknown_kid' });
+    expect(getJwks).toHaveBeenCalledTimes(2); // 최초 + 강제 1회뿐
+  });
+
+  it('kid 외의 실패는 갱신하지 않는다 — 만료·aud 불일치로 조회를 유발할 수 없다', async () => {
+    const getJwks = vi.fn(async () => AFTER_ROTATION);
+    const nowSec = Math.floor(NOW / 1000);
+
+    expect((await verifyWithRotation(makeToken({ exp: nowSec - 9999 }), { getJwks, aud: AUD, issuer: ISS, now: NOW })).reason).toBe('expired');
+    expect((await verifyWithRotation(makeToken({ aud: 'other' }), { getJwks, aud: AUD, issuer: ISS, now: NOW })).reason).toBe('aud_mismatch');
+    expect(getJwks).toHaveBeenCalledTimes(2); // 각 호출당 1회씩, 강제 갱신 없음
+  });
+
+  it('JWKS를 못 받으면 통과시키지 않는다', async () => {
+    const getJwks = vi.fn(async () => { throw new Error('down'); });
+    expect(await verifyWithRotation(makeToken(), { getJwks, aud: AUD, issuer: ISS, now: NOW })).toEqual({ ok: false, reason: 'jwks_unavailable' });
+  });
+});
+
+describe('createJwksCache — 강제 갱신 쿨다운', () => {
+  const res = (body) => ({ ok: true, json: async () => body });
+
+  it('force는 TTL을 무시하고 다시 받는다', async () => {
+    const fetchImpl = vi.fn(async () => res(JWKS));
+    let t = 0;
+    const get = createJwksCache({ teamDomain: ISS, ttlMs: 999999, minRefreshMs: 1000, fetchImpl, now: () => t });
+
+    await get();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    t = 10;
+    await get({ force: true }); // TTL 한참 남았지만 강제
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('쿨다운 안에서는 강제 갱신을 반복하지 않는다 — 임의 kid 요청으로 조회를 유발할 수 없다', async () => {
+    const fetchImpl = vi.fn(async () => res(JWKS));
+    let t = 0;
+    const get = createJwksCache({ teamDomain: ISS, ttlMs: 999999, minRefreshMs: 1000, fetchImpl, now: () => t });
+
+    await get();
+    t = 10;
+    await get({ force: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+    // 쿨다운(1000ms) 안에서 100번 강제해도 조회는 늘지 않는다
+    for (let i = 0; i < 100; i += 1) { t += 1; await get({ force: true }); }
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+    // 쿨다운이 지나면 다시 허용
+    t = 5000;
+    await get({ force: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 });
