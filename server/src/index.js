@@ -107,6 +107,14 @@ const server = createServer(async (req, res) => {
     }
     if (body.error) return json(res, 400, { error: body.error });
 
+    // 본문은 객체여야 한다. `null`·배열·숫자도 유효한 JSON이라 여기서 걸러야 한다 —
+    // 특히 `null`은 store.sync의 구조분해에서 던져 클라이언트 입력 오류가 500 + 스택
+    // 트레이스로 기록된다(진짜 장애를 찾을 때 노이즈가 된다).
+    const payload = body.value;
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      return json(res, 400, { error: 'invalid_body' });
+    }
+
     // 소유자는 요청 본문이 아니라 **검증된 신원**에서 가져온다(본문에서 받으면 남의 데이터를
     // 지목할 수 있다). 키는 email이 아니라 **sub**다 — 이메일은 바뀌고 재할당될 수 있어서,
     // 재할당된 주소로 로그인한 다른 사람이 앞사람 데이터를 읽고 덮어쓸 수 있다.
@@ -116,7 +124,7 @@ const server = createServer(async (req, res) => {
     if (!owner) return json(res, 401, { error: 'unauthorized', reason: 'no_subject' });
 
     try {
-      return json(res, 200, store.sync(owner, body.value));
+      return json(res, 200, store.sync(owner, payload));
     } catch (err) {
       console.error('sync 실패:', err);
       return json(res, 500, { error: 'sync_failed' });

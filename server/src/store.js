@@ -125,7 +125,10 @@ export function createStore(db) {
 
   return {
     // 밀어넣고(push) 그 자리에서 당겨온다(pull). 한 번의 왕복으로 끝내 중간 상태를 만들지 않는다.
-    sync(owner, { cursor = 0, cells = [], docs = [] } = {}) {
+    sync(owner, input) {
+      // 기본값 `= {}`는 undefined만 막고 null은 못 막는다(구조분해에서 던진다).
+      // 호출자(HTTP 핸들러)가 이미 검증하지만, 저장소도 스스로 온전하게 둔다.
+      const { cursor = 0, cells = [], docs = [] } = input && typeof input === 'object' ? input : {};
       const from = Number.isFinite(cursor) && cursor >= 0 ? cursor : 0;
       const inCells = normalizeCells(cells);
       const inDocs = normalizeDocs(docs);

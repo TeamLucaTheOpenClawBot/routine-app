@@ -126,6 +126,10 @@ describe('sync — 방어', () => {
 
   it('빈 요청·이상한 커서도 안전하다', () => {
     expect(store.sync(ME, {}).cells).toEqual([]);
+    // 기본값 `= {}`는 undefined만 막는다 — null/비객체도 던지지 않아야 한다.
+    expect(store.sync(ME, null).cells).toEqual([]);
+    expect(store.sync(ME, undefined).cells).toEqual([]);
+    expect(store.sync(ME, 42).cells).toEqual([]);
     expect(store.sync(ME, { cursor: -5 }).cells).toEqual([]);
     expect(store.sync(ME, { cursor: 'nope', cells: 'nope', docs: 'nope' }).cells).toEqual([]);
   });
