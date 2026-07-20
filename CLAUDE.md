@@ -67,13 +67,22 @@
   시크릿 `DEPLOY_HOST/USER/SSH_KEY/KNOWN_HOSTS` — 호스트 키는 핀닝, keyscan 안 씀).
   PR에선 빌드+스모크만. 외부 노출은 Cloudflare Tunnel
   (`routine.chillingdaisy.org` → `localhost:8080`, 공인 포트 개방 없음). 서버 절차 `deploy/README.md`.
+  2026-07-20 자동배포 경로 전 구간 실측 검증(런 약 73초 = publish 55초 + SSH 배포 9초).
+- **레포는 public**(2026-07-20 전환): org 무료 Actions 분(2,000분·**org 전체 공용 풀**)이 소진돼
+  모든 런이 시작 전 거부되던 것을 해소하기 위해서다 — public 레포는 Actions 무제한 무료.
+  **GHCR 패키지는 여전히 private**이며 배포는 1회용 토큰 pull로 동작한다(레포 공개와 무관).
+  배포 시크릿은 레포가 아니라 Actions secrets에 있고, fork PR은 시크릿을 받지 못하며 deploy 잡은
+  `github.ref == 'refs/heads/main'` 게이팅이라 외부 PR로는 배포 경로에 도달할 수 없다.
+  주의: 앞으로 커밋에 서버 IP·키를 넣으면 즉시 공개된다(현재 히스토리는 클린).
 
 ## 로드맵 단계 메모
 
 - Phase 1: ~~#1 실제 날짜~~(완료 · PR #11) · ~~#2 localStorage 영속화 + 데모 시드 제거~~(완료 · PR #13)
-- Phase 2: ~~#3 반응형 전체화면(목업 프레임 제거)~~(완료) · ~~#4 PWA~~(완료) · ~~#5 배포~~(레포 측 완료 —
-  CI 빌드→GHCR(private)→CI SSH push 배포·Cloudflare 터널, 서버 세팅·검증 절차는 `deploy/README.md`)
+- Phase 2: ~~#3 반응형 전체화면(목업 프레임 제거)~~(완료) · ~~#4 PWA~~(완료) · ~~#5 배포~~(완료 —
+  서버 세팅·터널까지 끝났고 2026-07-20 CI 자동배포 경로를 실측 검증했다. 절차·롤백은 `deploy/README.md`)
 - 백로그: **다음 → #16** 루틴별 찬스 시스템(주/월 리필·기타찬스·체크 3-상태) — 저장 스키마 v2가
   #7 동기화 설계에 영향을 주므로 백엔드 전에 확정
+- 운영 후속 **#20**(열림): CI 최적화는 PR #21로 반영됐고, 머지된 원격 브랜치 정리·
+  `relay.chillingdaisy.org` DNS 등 소소한 항목이 남아 있다
 - Phase 3: #7 백엔드·계정·클라우드 동기화 · #6 알림
 - 상시: #8 테스트·접근성·에러 처리·브랜딩
