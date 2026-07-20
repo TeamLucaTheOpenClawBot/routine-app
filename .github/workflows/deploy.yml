@@ -149,6 +149,9 @@ jobs:
       group: deploy-server
       cancel-in-progress: false
     steps:
+      # compose 파일을 서버로 실어 보내야 하므로 레포가 필요하다.
+      - uses: actions/checkout@v4
+
       - name: SSH deploy (ephemeral GHCR login → pull → up)
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -164,6 +167,11 @@ jobs:
           # 호스트 키 핀닝: keyscan(그 순간의 키를 무조건 신뢰) 대신 시크릿에 고정한 서버
           # 정본 키만 신뢰한다 — DNS/경로 스푸핑·키 교체 시 토큰 전송 전에 접속이 실패한다.
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # compose 파일을 레포에서 서버로 동기화한다. 이전에는 1회 수동 배치라 레포에 서비스를
+          # 추가해도 서버에 영영 반영되지 않았다(#7 리뷰에서 발견) — 레포를 단일 원본으로 만든다.
+          # `.env`(Access 값)는 서버에만 두고 건드리지 않는다.
+          scp -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key \
+            deploy/docker-compose.yml "$SSH_USER@$HOST:/opt/routine-app/docker-compose.yml"
           # 토큰은 argv에 노출하지 않고 stdin → docker login --password-stdin 으로만 전달.
           # trap: pull/up이 실패해도 logout이 반드시 실행돼 자격증명이 서버에 남지 않는다.
           # --remove-orphans: compose에서 제거된 서비스(구 watchtower 등)를 함께 정리.
