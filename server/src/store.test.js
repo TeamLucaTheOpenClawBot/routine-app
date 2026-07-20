@@ -178,3 +178,47 @@ describe('sync — value 누락은 삭제가 아니다', () => {
     expect(find(full, '2026-07-20', 'r1').value).toBe(null);
   });
 });
+
+describe('rekeyOwner — IdP 변경 복구', () => {
+  const OLD = 'sub-old';
+  const NEW = 'sub-new';
+
+  it('옛 커서를 그대로 든 클라이언트도 이관된 데이터를 받는다', () => {
+    // 이게 이 기능의 존재 이유다. owner만 바꾸고 seq를 두면 재키잉된 행의 seq가
+    // 옛 커서 이하라 `seq > cursor` 조회가 전부 건너뛰어 데이터가 여전히 없어 보인다.
+    const before = store.sync(OLD, { cursor: 0, cells: [cell('2026-07-20', 'r1', true, 100)], docs: [{ key: 'routines', value: ['a'], ts: 100 }] });
+    const staleCursor = before.cursor;
+
+    expect(store.rekeyOwner(OLD, NEW)).toEqual({ cells: 1, docs: 1 });
+
+    const after = store.sync(NEW, { cursor: staleCursor });
+    expect(find(after, '2026-07-20', 'r1')?.value).toBe(true);
+    expect(after.docs.find((d) => d.key === 'routines')?.value).toEqual(['a']);
+  });
+
+  it('옛 소유자에는 아무것도 남지 않는다', () => {
+    store.sync(OLD, { cursor: 0, cells: [cell('2026-07-20', 'r1', true, 100)] });
+    store.rekeyOwner(OLD, NEW);
+    expect(store.sync(OLD, { cursor: 0 }).cells).toEqual([]);
+  });
+
+  it('무의미한 이관은 무시한다', () => {
+    store.sync(OLD, { cursor: 0, cells: [cell('2026-07-20', 'r1', true, 100)] });
+    expect(store.rekeyOwner(OLD, OLD)).toEqual({ cells: 0, docs: 0 });
+    expect(store.rekeyOwner('', NEW)).toEqual({ cells: 0, docs: 0 });
+    expect(store.sync(OLD, { cursor: 0 }).cells).toHaveLength(1); // 그대로 남아 있다
+  });
+
+  it('owners()가 소유자별 행 수를 알려준다 (어느 sub에 묶였는지 찾는 용도)', () => {
+    store.sync(OLD, { cursor: 0, cells: [cell('2026-07-20', 'r1', true, 100), cell('2026-07-21', 'r1', true, 100)] });
+    store.sync(NEW, { cursor: 0, cells: [cell('2026-07-20', 'r1', true, 100)] });
+    expect(store.owners()).toEqual([{ owner: OLD, n: 2 }, { owner: NEW, n: 1 }]);
+  });
+});
+
+describe('sync — 응답에 owner를 담는다', () => {
+  it('클라이언트가 소유자 변경을 감지해 커서를 버릴 수 있다', () => {
+    const out = store.sync('sub-a', { cursor: 0, cells: [cell('2026-07-20', 'r1', true, 1)] });
+    expect(out.owner).toBe('sub-a');
+  });
+});

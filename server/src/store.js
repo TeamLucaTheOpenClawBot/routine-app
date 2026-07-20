@@ -153,7 +153,39 @@ export function createStore(db) {
       const outDocs = docsSince.all(owner, from).map((r) => ({ key: r.key, value: JSON.parse(r.value), ts: r.ts }));
 
       // 새 커서 = 지금까지 발급된 최대 seq. 위 조회는 seq > from 전부를 담았으므로 이 값까지 안전하다.
-      return { cursor: nextSeq.get().next_seq - 1, cells: outCells, docs: outDocs };
+      // owner를 함께 돌려준다 — 클라이언트는 소유자가 바뀌면(IdP 변경 등) 커서를 버려야 한다.
+      // 옛 소유자에서 받은 커서를 그대로 쓰면 새 소유자의 행을 전부 건너뛴다.
+      return { owner, cursor: nextSeq.get().next_seq - 1, cells: outCells, docs: outDocs };
+    },
+
+    // 소유자 키 이관(IdP 변경으로 sub가 바뀐 경우의 복구).
+    // **seq를 새로 발급하는 것이 핵심이다.** 단순히 owner만 바꾸면 행의 seq가 옛 커서 이하로
+    // 남아, 그 커서를 든 클라이언트가 조회해도 전부 건너뛰어 데이터가 여전히 없어 보인다.
+    rekeyOwner(from, to) {
+      if (!from || !to || from === to) return { cells: 0, docs: 0 };
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        let seq = nextSeq.get().next_seq;
+        const cellRows = db.prepare('SELECT rowid AS rid FROM cells WHERE owner = ?').all(from);
+        const setCell = db.prepare('UPDATE cells SET owner = ?, seq = ? WHERE rowid = ?');
+        for (const r of cellRows) setCell.run(to, seq++, r.rid);
+
+        const docRows = db.prepare('SELECT rowid AS rid FROM docs WHERE owner = ?').all(from);
+        const setDoc = db.prepare('UPDATE docs SET owner = ?, seq = ? WHERE rowid = ?');
+        for (const r of docRows) setDoc.run(to, seq++, r.rid);
+
+        bumpSeq.run(seq);
+        db.exec('COMMIT');
+        return { cells: cellRows.length, docs: docRows.length };
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    // 운영용: 어떤 소유자에 얼마나 쌓여 있는지.
+    owners() {
+      return db.prepare('SELECT owner, COUNT(*) AS n FROM cells GROUP BY owner ORDER BY n DESC').all();
     },
   };
 }
