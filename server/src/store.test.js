@@ -266,3 +266,36 @@ describe('sync — 응답에 owner를 담는다', () => {
     expect(out.owner).toBe('sub-a');
   });
 });
+
+describe('sync — ts는 안전 정수만 (오염 방지)', () => {
+  // 2^53 이상은 INSERT는 되고 읽을 때 node:sqlite가 던진다 → 오염 행이 남아
+  // 그 소유자의 이후 모든 동기화가 영구히 실패한다. 입구에서 막아야 한다.
+  const POISON = [9007199254740992, 1e300, Number.MAX_VALUE, 1.5, NaN, Infinity, -1, '100'];
+
+  it('안전 정수가 아닌 ts는 버린다', () => {
+    for (const ts of POISON) {
+      const out = store.sync(ME, { cursor: 0, cells: [{ dateKey: '2026-07-20', routineId: 'r1', value: 'x', ts }] });
+      expect(find(out, '2026-07-20', 'r1'), `ts=${ts}가 통과했다`).toBeUndefined();
+    }
+  });
+
+  it('오염 시도 뒤에도 정상 동기화가 계속 동작한다 (영구 불능 방지)', () => {
+    store.sync(ME, { cursor: 0, cells: [cell('2026-07-01', 'r1', '정상', 100)] });
+    store.sync(ME, { cursor: 0, cells: [{ dateKey: '2026-07-20', routineId: 'r1', value: '독', ts: 9007199254740992 }] });
+
+    // 예전 구현은 여기서부터 모든 호출이 던졌다.
+    expect(() => store.sync(ME, { cursor: 0 })).not.toThrow();
+    expect(() => store.sync(ME, { cursor: 0, cells: [cell('2026-07-02', 'r1', '새로운', 200)] })).not.toThrow();
+    expect(find(store.sync(ME, { cursor: 0 }), '2026-07-01', 'r1').value).toBe('정상');
+  });
+
+  it('docs의 ts도 같은 규칙', () => {
+    const out = store.sync(ME, { cursor: 0, docs: [{ key: 'routines', value: ['x'], ts: 9007199254740992 }] });
+    expect(out.docs).toEqual([]);
+  });
+
+  it('경계값은 통과한다', () => {
+    const out = store.sync(ME, { cursor: 0, cells: [cell('2026-07-20', 'r1', 'ok', Number.MAX_SAFE_INTEGER)] });
+    expect(find(out, '2026-07-20', 'r1').value).toBe('ok');
+  });
+});

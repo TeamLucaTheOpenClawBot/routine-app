@@ -64,7 +64,11 @@ export function openDatabase(path = ':memory:') {
   return db;
 }
 
-const isPlainTs = (v) => Number.isFinite(v) && v >= 0;
+// ts는 **안전 정수**여야 한다. isFinite만 보면 2^53 이상이 통과하는데, 그 값은 INSERT는
+// 성공하고 **읽을 때** node:sqlite가 던진다("Value is too large to be represented as a
+// JavaScript number") → 오염된 행이 DB에 남아 그 소유자의 이후 모든 동기화가 영구히 500이 된다.
+// 요청 하나로 자기 데이터가 잠기는 셈이라, 입구에서 막는다. 소수·1e300 등도 epoch ms로 무의미하다.
+const isPlainTs = (v) => Number.isSafeInteger(v) && v >= 0;
 
 // 들어온 변경을 방어적으로 정규화한다. 형태가 어긋난 항목은 통째로 버리지 않고 건너뛴다 —
 // 한 칸이 깨졌다고 나머지 동기화를 막으면 클라이언트가 영구히 밀리지 못한다.
