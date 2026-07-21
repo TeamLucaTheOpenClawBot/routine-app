@@ -130,9 +130,16 @@ function App() {
   const baselineRef = useRef({ routines, checks, bonusChances, weekStart, notif, remindHour });
   const syncingRef = useRef(false);
   const pushTimerRef = useRef(null);
-  const sessionOwnerRef = useRef(null); // 이 세션에서 확정된 신원(sub). 마운트마다 null로 시작.
   const syncGenRef = useRef(0); // 세대 번호. 데이터 초기화가 세대를 올려 비행 중 응답 적용을 무효화한다.
   const syncPendingRef = useRef(false); // 요청 중 트리거가 막혔음을 기록 — 끝나면 재실행한다.
+
+  // 단조 증가 논리 시각을 발급한다. 기기 시계가 뒤로 가도 새 편집의 ts가 서버 저장값보다 낮아
+  // LWW에서 조용히 지는 걸 막는다(#30 Codex P2). lastTs는 sync 상태에 실려 영속·pull로 갱신된다.
+  const issueTs = () => {
+    const ts = Math.max(Date.now(), (syncRef.current.lastTs ?? 0) + 1);
+    syncRef.current = { ...syncRef.current, lastTs: ts };
+    return ts;
+  };
   // 최신 **커밋된** 상태를 렌더마다 동기적으로 담아둔다. runSync는 async라, await를 건너 돌아온
   // 사이에 사용자가 편집하면 baseline은 아직 편집 전(패시브 effect가 안 돌았을 수 있다) — 그때
   // liveState로 비행 중 편집을 응답 적용 전에 반영해 덮어쓰기를 막는다(#30 Codex P1).
@@ -150,22 +157,20 @@ function App() {
     syncingRef.current = true;
     const gen = syncGenRef.current; // 이 왕복이 시작된 세대. 도중에 초기화되면 응답을 버린다.
     try {
-      // 밀기 전에 세션 신원을 확정한다(세션당 1회). outbox·커서는 특정 소유자(sub)의 것이라,
-      // 세션이 다른 계정으로 바뀐 채로 밀면 A의 데이터가 B 계정에 쓰이고(서버는 소유자를 세션에서
-      // 가져온다), A의 커서를 그대로 쓰면 B의 옛 행(seq<=커서)이 영영 안 보인다. 신원이 바뀌었으면
-      // outbox를 버리고 커서를 0으로 리셋한다(로컬 계정 전환 UX·데이터 정리는 #7 4/4).
-      // Access 재인증은 리다이렉트→리로드라 새 세션에서 이 게이트가 다시 걸린다.
-      if (sessionOwnerRef.current === null) {
-        const me = await getMe();
-        if (!me.ok || typeof me.data?.sub !== 'string') return; // 신원 미확정이면 이번엔 밀지 않는다
-        sessionOwnerRef.current = me.data.sub;
-        if (syncRef.current.owner && syncRef.current.owner !== me.data.sub) {
-          syncRef.current = { ...emptySync(), owner: me.data.sub }; // 계정 바뀜 → outbox·커서 폐기
-          saveSync(syncRef.current);
-        } else if (!syncRef.current.owner) {
-          syncRef.current = { ...syncRef.current, owner: me.data.sub }; // 최초 확정 — 우리 것이라 유지
-          saveSync(syncRef.current);
-        }
+      // **매 push마다** 세션 신원을 확인한다. outbox·커서는 특정 소유자(sub)의 것이라, 세션이
+      // 다른 계정으로 바뀐 채로 밀면 A의 데이터가 B 계정에 쓰이고(서버는 소유자를 세션에서 가져온다),
+      // A의 커서를 그대로 쓰면 B의 옛 행(seq<=커서)이 영영 안 보인다. Access 세션은 **다른 탭**에서
+      // 재인증되면 이 탭 리로드 없이도 바뀌므로(쿠키 공유) '세션당 1회'로는 막지 못한다. 신원이
+      // 바뀌었으면 outbox·커서를 폐기한다(로컬 계정 전환 UX·데이터 정리는 #7 4/4).
+      const me = await getMe();
+      if (!me.ok || typeof me.data?.sub !== 'string') return; // 신원 미확정이면 이번엔 밀지 않는다
+      if (syncGenRef.current !== gen) return; // getMe 대기 중 초기화됐으면 버린다
+      if (syncRef.current.owner && syncRef.current.owner !== me.data.sub) {
+        syncRef.current = { ...emptySync(), owner: me.data.sub, lastTs: syncRef.current.lastTs }; // 계정 바뀜 → outbox·커서 폐기(ts는 단조 유지)
+        saveSync(syncRef.current);
+      } else if (!syncRef.current.owner) {
+        syncRef.current = { ...syncRef.current, owner: me.data.sub }; // 최초 확정 — 우리 것이라 유지
+        saveSync(syncRef.current);
       }
       const sent = syncRequest(syncRef.current);
       const res = await postSync(sent);
@@ -178,7 +183,7 @@ function App() {
       // 덮어써 편집이 UI·outbox 양쪽에서 사라진다. 여기서 latest 커밋 상태(liveState)를 기준으로
       // 반영해 두면 아래 병합이 그 편집을 pending으로 인식해 지키고, 다음 왕복에 밀린다.
       const live = liveStateRef.current ?? baselineRef.current;
-      syncRef.current = enqueueLocalChanges(syncRef.current, baselineRef.current, live, Date.now());
+      syncRef.current = enqueueLocalChanges(syncRef.current, baselineRef.current, live, issueTs());
       // prune·pull은 **현재** outbox + latest 상태 기준으로 한다 — 보낸 뒤 들어온 편집을 잃지 않게.
       const { state: merged, sync: nextSync } = applySyncResponse(live, syncRef.current, res.data, sent);
       // 아래 setState가 유발할 적재 effect가 pull분을 로컬 편집으로 오인해 재적재하지 않도록 baseline을 먼저 올린다.
@@ -206,7 +211,7 @@ function App() {
   // 로컬 변경 → outbox 적재(한 곳에서). pull로 인한 변경은 baseline이 함께 올라가 걸러진다.
   useEffect(() => {
     const current = { routines, checks, bonusChances, weekStart, notif, remindHour };
-    const next = enqueueLocalChanges(syncRef.current, baselineRef.current, current, Date.now());
+    const next = enqueueLocalChanges(syncRef.current, baselineRef.current, current, issueTs());
     baselineRef.current = current;
     if (next === syncRef.current) return undefined; // 변경 없음(동일 참조)
     syncRef.current = next;
@@ -488,7 +493,7 @@ function App() {
     // baseline도 기본값으로 맞춰 이 초기화가 삭제 변경으로 outbox에 쌓이지 않게 한다
     // (서버는 옛 데이터를 그대로 보관 — 교차 기기 초기화 의미론은 #7 4/4).
     baselineRef.current = { routines: defaultRoutines(), checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 };
-    syncRef.current = { ...emptySync(), cursor: syncRef.current.cursor, owner: syncRef.current.owner };
+    syncRef.current = { ...emptySync(), cursor: syncRef.current.cursor, owner: syncRef.current.owner, lastTs: syncRef.current.lastTs };
     saveSync(syncRef.current);
     // 대기 중인 sync 응답이 초기화 전 커서로 받은 데이터를 되살리지 않도록 세대를 올린다.
     syncGenRef.current += 1;

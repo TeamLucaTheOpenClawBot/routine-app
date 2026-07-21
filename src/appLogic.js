@@ -466,7 +466,9 @@ const cellKey = (dateKey, routineId) => `${dateKey}\t${routineId}`;
 const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 export function emptySync() {
-  return { cursor: 0, owner: null, cells: {}, docs: {} };
+  // lastTs = 마지막으로 발급한 논리 시각. App은 max(Date.now(), lastTs+1)로 **단조 증가** ts를
+  // 발급한다 — 기기 시계가 뒤로 가도 새 편집의 ts가 서버 저장값보다 낮아 조용히 지는 걸 막는다.
+  return { cursor: 0, owner: null, cells: {}, docs: {}, lastTs: 0 };
 }
 
 // 설정 문서 형태 — 통째로 LWW되는 키/값들.
@@ -592,9 +594,14 @@ export function applySyncResponse(state, sync, resp, sent) {
 
   const owner = typeof resp.owner === 'string' ? resp.owner : sync.owner;
   const cursor = Number.isSafeInteger(resp.cursor) && resp.cursor >= 0 ? resp.cursor : sync.cursor;
+  // 논리 시각을 **본 것 이상으로** 끌어올린다 — pull로 받은 어떤 ts보다 크게 유지하면, 원격 편집을
+  // 본 뒤의 로컬 편집이 인과적으로 더 새 ts를 받아 LWW에서 정당하게 이긴다(시계 스큐 완화).
+  let lastTs = sync.lastTs ?? 0;
+  for (const c of resp.cells ?? []) if (Number.isSafeInteger(c.ts) && c.ts > lastTs) lastTs = c.ts;
+  for (const d of resp.docs ?? []) if (Number.isSafeInteger(d.ts) && d.ts > lastTs) lastTs = d.ts;
   return {
     state: { ...state, checks, routines, bonusChances, weekStart, notif, remindHour },
-    sync: { cursor, owner, cells, docs },
+    sync: { cursor, owner, cells, docs, lastTs },
   };
 }
 
@@ -603,6 +610,7 @@ export function serializeSync(sync) {
     version: 1,
     cursor: sync.cursor,
     owner: sync.owner,
+    lastTs: sync.lastTs ?? 0,
     cells: Object.values(sync.cells),
     docs: Object.values(sync.docs),
   });
@@ -620,6 +628,7 @@ export function parseSync(raw) {
   if (!data || typeof data !== 'object') return emptySync();
   const cursor = Number.isSafeInteger(data.cursor) && data.cursor >= 0 ? data.cursor : 0;
   const owner = typeof data.owner === 'string' ? data.owner : null;
+  const lastTs = Number.isSafeInteger(data.lastTs) && data.lastTs >= 0 ? data.lastTs : 0;
   const cells = {};
   if (Array.isArray(data.cells)) {
     for (const c of data.cells) {
@@ -637,7 +646,7 @@ export function parseSync(raw) {
       docs[d.key] = { key: d.key, value: d.value, ts: d.ts };
     }
   }
-  return { cursor, owner, cells, docs };
+  return { cursor, owner, cells, docs, lastTs };
 }
 
 export function loadSync(storage = safeStorage()) {

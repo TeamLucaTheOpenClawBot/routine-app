@@ -162,6 +162,18 @@ describe('applySyncResponse — prune + pull 반영', () => {
     expect(out.state.checks).toEqual({ '2026-07-20': { r1: true } });
   });
 
+  it('lastTs를 pull로 본 최대 ts까지 끌어올린다 (#30 Codex P2)', () => {
+    const sync = { ...emptySync(), lastTs: 100 };
+    const resp = {
+      owner: 'sub-1',
+      cursor: 8,
+      cells: [{ dateKey: '2026-07-20', routineId: 'r1', value: true, ts: 500 }],
+      docs: [{ key: 'settings', value: { weekStart: 1 }, ts: 300 }],
+    };
+    const out = applySyncResponse(baseState(), sync, resp, { cells: [], docs: [] });
+    expect(out.sync.lastTs).toBe(500); // 본 것 이상으로 유지 → 이후 로컬 편집이 인과적으로 이긴다
+  });
+
   it('아직 못 민 로컬 doc이 있으면 그 키의 pull은 무시한다(로컬 우선)', () => {
     const state = baseState({ weekStart: 1 });
     // settings를 로컬에서 바꿔 outbox에 있음(아직 안 보냄)
@@ -176,9 +188,11 @@ describe('serializeSync / parseSync 왕복', () => {
   it('맵↔배열 왕복이 보존된다', () => {
     let sync = queueCell(emptySync(), '2026-07-20', 'r1', true, 100);
     sync = { ...sync, cursor: 12, owner: 'sub-1', docs: { settings: { key: 'settings', value: { weekStart: 1, notif: true, remindHour: 21 }, ts: 200 } } };
+    sync = { ...sync, lastTs: 999 };
     const back = parseSync(serializeSync(sync));
     expect(back.cursor).toBe(12);
     expect(back.owner).toBe('sub-1');
+    expect(back.lastTs).toBe(999);
     expect(syncRequest(back).cells).toEqual([{ dateKey: '2026-07-20', routineId: 'r1', value: true, ts: 100 }]);
     expect(syncRequest(back).docs).toEqual([{ key: 'settings', value: { weekStart: 1, notif: true, remindHour: 21 }, ts: 200 }]);
   });
