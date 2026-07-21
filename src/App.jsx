@@ -133,6 +133,7 @@ function App() {
   const pushTimerRef = useRef(null);
   const syncGenRef = useRef(0); // 세대 번호. 데이터 초기화가 세대를 올려 비행 중 응답 적용을 무효화한다.
   const syncPendingRef = useRef(false); // 요청 중 트리거가 막혔음을 기록 — 끝나면 재실행한다.
+  const syncHaltedRef = useRef(false); // 세션 신원이 outbox 소유자와 다르면(계정 바뀜) 이 세션 동기화 중단.
 
   // 단조 증가 논리 시각을 발급한다. 기기 시계가 뒤로 가도 새 편집의 ts가 서버 저장값보다 낮아
   // LWW에서 조용히 지는 걸 막는다(#30 Codex P2). lastTs는 sync 상태에 실려 영속·pull로 갱신된다.
@@ -154,6 +155,9 @@ function App() {
       syncPendingRef.current = true;
       return;
     }
+    // 계정이 바뀐 세션에선(아래 409로 감지) 이 세션 동안 동기화를 완전히 멈춘다 — push·pull·merge를
+    // 하지 않아 A의 로컬 데이터가 B 계정에 섞일 경로 자체를 없앤다. 계정 전환은 리로드 후 #7 4/4.
+    if (syncHaltedRef.current) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     syncingRef.current = true;
     const gen = syncGenRef.current; // 이 왕복이 시작된 세대. 도중에 초기화되면 응답을 버린다.
@@ -165,11 +169,12 @@ function App() {
       const sent = syncRequest(syncRef.current);
       const res = await postSync(sent);
       if (res.kind === 'conflict') {
-        // 세션이 다른 계정으로 바뀐 채 밀었다(서버 거부, 쓰기 없음). outbox·커서를 폐기하고 새
-        // 소유자로 다시 시작한다(ts는 단조 유지). 로컬 계정 전환 UX·데이터 정리는 #7 4/4.
-        const newOwner = typeof res.data?.owner === 'string' ? res.data.owner : null;
-        syncRef.current = { ...emptySync(), owner: newOwner, lastTs: syncRef.current.lastTs };
-        saveSync(syncRef.current);
+        // 세션 신원이 outbox 소유자와 다르다(서버가 쓰기 전에 거부). 3/4는 계정 전환을 처리하지
+        // 않으므로 **아무것도 건드리지 않고** 이 세션 동기화를 멈춘다 — outbox·커서·화면 상태·
+        // baseline 모두 그대로 둔다. 여기서 outbox만 비우면 화면에 남은 A 데이터가 다음 편집 때
+        // 그 소유자로 push돼 B 계정에 섞인다(#30 Codex P1). 로컬(A) 데이터는 보존되고, 세션이
+        // 원래 계정으로 돌아온 뒤 리로드하면 재개된다. 계정 전환 로컬 격리는 #7 4/4.
+        syncHaltedRef.current = true;
         return;
       }
       if (!res.ok) return; // auth(재인증)·offline·server 구분과 안내는 4/4(동기화 상태 UI)에서.
