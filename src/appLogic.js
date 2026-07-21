@@ -576,6 +576,12 @@ export function applySyncResponse(state, sync, resp, sent) {
     }
   }
 
+  // 루틴 삭제가 pull로 들어오면 그 routineId의 체크가 고아로 남는다(삭제한 기기는 다른 기기의
+  // 체크를 못 봐서 그 칸 툼스톤을 못 보낸다). nextRoutineId는 최고 id를 재사용하므로, 고아를
+  // 두면 재활용된 id의 새 루틴에 옛 완료가 되살아난다 — 로컬 deleteRoutine이 purgeRoutineChecks로
+  // 막는 것과 같은 불변식이라, 수용된 루틴 id 집합으로 여기서도 정리한다(로드 시점과 동일).
+  if (pulledDocs.some((d) => d.key === 'routines')) checks = sanitizeChecks(checks, ids);
+
   const owner = typeof resp.owner === 'string' ? resp.owner : sync.owner;
   const cursor = Number.isSafeInteger(resp.cursor) && resp.cursor >= 0 ? resp.cursor : sync.cursor;
   return {
