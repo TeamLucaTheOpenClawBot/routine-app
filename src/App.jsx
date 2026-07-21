@@ -134,6 +134,11 @@ function App() {
   const syncGenRef = useRef(0); // 세대 번호. 데이터 초기화가 세대를 올려 비행 중 응답 적용을 무효화한다.
   const syncPendingRef = useRef(false); // 요청 중 트리거가 막혔음을 기록 — 끝나면 재실행한다.
   const syncHaltedRef = useRef(false); // 세션 신원이 outbox 소유자와 다르면(계정 바뀜) 이 세션 동기화 중단.
+  // 마운트 시 **기존 로컬 데이터가 있었는지**. 소유자 미확정(owner=null) 상태에서 기존 데이터를 밀면,
+  // 그게 지금 세션 것인지 확인할 방법이 없어(계정 무관 단일 저장) 남의 계정에 섞일 수 있다 — 최초
+  // 로컬→클라우드 바인딩·마이그레이션은 #7 4/4다. 완전 신규(데이터 없음)만 이 세션에서 만든 것이라
+  // 안전하게 바인딩한다. #30 Codex P1.
+  const preexistingDataRef = useRef(persisted != null);
 
   // 단조 증가 논리 시각을 발급한다. 기기 시계가 뒤로 가도 새 편집의 ts가 서버 저장값보다 낮아
   // LWW에서 조용히 지는 걸 막는다(#30 Codex P2). lastTs는 sync 상태에 실려 영속·pull로 갱신된다.
@@ -158,6 +163,12 @@ function App() {
     // 계정이 바뀐 세션에선(아래 409로 감지) 이 세션 동안 동기화를 완전히 멈춘다 — push·pull·merge를
     // 하지 않아 A의 로컬 데이터가 B 계정에 섞일 경로 자체를 없앤다. 계정 전환은 리로드 후 #7 4/4.
     if (syncHaltedRef.current) return;
+    // 미바인딩(owner=null) + 기존 로컬 데이터 = 최초 마이그레이션 대상 → 자동으로 밀지 않고 멈춘다.
+    // 완전 신규는 통과시켜(이 세션에서 만든 데이터라 안전) 바인딩·동기화가 정상 동작하게 한다.
+    if (!syncRef.current.owner && preexistingDataRef.current) {
+      syncHaltedRef.current = true;
+      return;
+    }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     syncingRef.current = true;
     const gen = syncGenRef.current; // 이 왕복이 시작된 세대. 도중에 초기화되면 응답을 버린다.
