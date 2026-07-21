@@ -444,3 +444,213 @@ export function clearState(storage = safeStorage()) {
     /* noop */
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 동기화 (#7) — 클라이언트 outbox + 서버 push/pull.
+//
+// 동기화 상태(cursor·outbox)는 **유저 데이터(STORAGE_KEY)와 별도 키**에 둔다. 유저 문서
+// 스키마(v2)를 건드리지 않으므로, 동기화 코드가 없던 이미지로 롤백해도 구버전 앱은 이 키를
+// 모른 채 유저 데이터를 그대로 읽는다(롤백 안전 — STORAGE_KEY 주석과 같은 원칙). outbox는
+// 아직 서버에 못 민 로컬 변경 로그다. ts는 App이 Date.now()로 주입한다(여기선 순수하게 유지).
+//
+// 서버 store.js와 짝을 이룬다:
+//  - cells: (dateKey, routineId) 한 칸이 최소 단위. checks의 각 칸이 곧 하나의 cell.
+//  - docs:  통째로 다루는 것 — 'routines' | 'settings' | 'bonusChances'(키 단위 LWW).
+//  - LWW 판정 근거는 ts(클라이언트 논리 시각), 커서 전진은 서버 seq.
+export const SYNC_KEY = 'routine-app:sync';
+const SYNC_DOC_KEYS = new Set(['routines', 'settings', 'bonusChances']);
+
+// outbox는 배열이 아니라 **맵**이다 — 같은 칸을 밀기 전에 다시 편집하면 자동으로 합쳐져
+// (coalesce) 마지막 값만 남는다. cells 키는 `${dateKey}\t${routineId}`, docs 키는 doc 키.
+const cellKey = (dateKey, routineId) => `${dateKey}\t${routineId}`;
+const sameJSON = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+export function emptySync() {
+  return { cursor: 0, owner: null, cells: {}, docs: {} };
+}
+
+// 설정 문서 형태 — 통째로 LWW되는 키/값들.
+export function settingsDoc(state) {
+  return { weekStart: state.weekStart, notif: state.notif, remindHour: state.remindHour };
+}
+
+// 셀 하나를 outbox에 적재(coalesce). value는 true | {chance,bonusId?} | null(삭제).
+export function queueCell(sync, dateKey, routineId, value, ts) {
+  return {
+    ...sync,
+    cells: { ...sync.cells, [cellKey(dateKey, routineId)]: { dateKey, routineId, value, ts } },
+  };
+}
+
+// 문서 하나를 outbox에 적재(coalesce).
+export function queueDoc(sync, key, value, ts) {
+  return { ...sync, docs: { ...sync.docs, [key]: { key, value, ts } } };
+}
+
+// 두 상태(prev→next)의 차이를 cells/docs 변경 목록으로 뽑는다(순수). App은 한 곳에서
+// 이걸로 outbox를 채운다 — 편집 지점마다 적재 코드를 흩뿌리지 않는다. 삭제는 value:null.
+export function diffState(prev, next) {
+  const cells = [];
+  const dateKeys = new Set([...Object.keys(prev.checks ?? {}), ...Object.keys(next.checks ?? {})]);
+  for (const dateKey of dateKeys) {
+    const pd = prev.checks?.[dateKey] ?? {};
+    const nd = next.checks?.[dateKey] ?? {};
+    const rids = new Set([...Object.keys(pd), ...Object.keys(nd)]);
+    for (const routineId of rids) {
+      if (sameJSON(pd[routineId], nd[routineId])) continue;
+      cells.push({ dateKey, routineId, value: nd[routineId] === undefined ? null : nd[routineId] });
+    }
+  }
+  const docs = [];
+  if (!sameJSON(prev.routines, next.routines)) docs.push({ key: 'routines', value: next.routines });
+  if (!sameJSON(prev.bonusChances, next.bonusChances)) docs.push({ key: 'bonusChances', value: next.bonusChances });
+  if (!sameJSON(settingsDoc(prev), settingsDoc(next))) docs.push({ key: 'settings', value: settingsDoc(next) });
+  return { cells, docs };
+}
+
+// prev→next 변경분을 계산해 outbox에 적재. ts는 이 변경들의 논리 시각(보통 Date.now()).
+export function enqueueLocalChanges(sync, prev, next, ts) {
+  const { cells, docs } = diffState(prev, next);
+  let out = sync;
+  for (const c of cells) out = queueCell(out, c.dateKey, c.routineId, c.value, ts);
+  for (const d of docs) out = queueDoc(out, d.key, d.value, ts);
+  return out;
+}
+
+// POST /api/sync 본문 스냅샷 — 지금 outbox에 쌓인 전부 + 커서.
+export function syncRequest(sync) {
+  return { cursor: sync.cursor, cells: Object.values(sync.cells), docs: Object.values(sync.docs) };
+}
+
+// 한 칸을 checks에 반영(순수). value null/undefined면 삭제. cycleCheck의 setValue와 같은 규칙.
+function applyCell(checks, dateKey, routineId, value) {
+  const day = { ...(checks[dateKey] ?? {}) };
+  if (value === null || value === undefined) delete day[routineId];
+  else day[routineId] = value;
+  const out = { ...checks };
+  if (Object.keys(day).length) out[dateKey] = day;
+  else delete out[dateKey];
+  return out;
+}
+
+// 서버 응답을 로컬 상태·outbox에 반영한다(순수). sent = 보낸 요청 스냅샷(syncRequest 결과).
+//  - prune: sent에 담겨 나갔고 그 뒤 재편집되지 않은(=ts 그대로) 항목만 outbox에서 뺀다.
+//    비행 중 사용자가 같은 칸을 또 고쳤으면(ts 변함) 남겨 다음 왕복에 민다.
+//  - pull 적용: 서버가 돌려준 칸/문서를 반영하되, prune 후에도 outbox에 남은 항목은
+//    **아직 못 민 로컬 편집**이므로 덮지 않는다(로컬 우선). 진 로컬 쓰기는 prune으로 빠졌고
+//    서버가 채택한 승자가 pull로 들어와 수렴한다.
+export function applySyncResponse(state, sync, resp, sent) {
+  const cells = { ...sync.cells };
+  for (const s of sent.cells ?? []) {
+    const k = cellKey(s.dateKey, s.routineId);
+    if (cells[k] && cells[k].ts === s.ts) delete cells[k];
+  }
+  const docs = { ...sync.docs };
+  for (const s of sent.docs ?? []) {
+    if (docs[s.key] && docs[s.key].ts === s.ts) delete docs[s.key];
+  }
+
+  let checks = state.checks;
+  for (const c of resp.cells ?? []) {
+    if (cells[cellKey(c.dateKey, c.routineId)]) continue; // 아직 못 민 로컬 편집이 우선
+    checks = applyCell(checks, c.dateKey, c.routineId, c.value);
+  }
+
+  let { routines, bonusChances, weekStart, notif, remindHour } = state;
+  const pulledDocs = (resp.docs ?? []).filter((d) => !docs[d.key]);
+  // routines를 먼저 반영해야 bonusChances 정규화의 validIds가 최신이 된다.
+  for (const d of pulledDocs) {
+    if (d.key !== 'routines') continue;
+    const r = sanitizeRoutines(d.value);
+    if (r) routines = r;
+  }
+  const ids = new Set(routines.map((r) => r.id));
+  for (const d of pulledDocs) {
+    if (d.key === 'settings') {
+      const s = d.value && typeof d.value === 'object' ? d.value : {};
+      if (s.weekStart === 0 || s.weekStart === 1) weekStart = s.weekStart;
+      if (typeof s.notif === 'boolean') notif = s.notif;
+      if (Number.isInteger(s.remindHour) && s.remindHour >= 0 && s.remindHour <= 23) remindHour = s.remindHour;
+    } else if (d.key === 'bonusChances') {
+      bonusChances = sanitizeBonusChances(d.value, ids);
+    }
+  }
+
+  const owner = typeof resp.owner === 'string' ? resp.owner : sync.owner;
+  const cursor = Number.isSafeInteger(resp.cursor) && resp.cursor >= 0 ? resp.cursor : sync.cursor;
+  return {
+    state: { ...state, checks, routines, bonusChances, weekStart, notif, remindHour },
+    sync: { cursor, owner, cells, docs },
+  };
+}
+
+export function serializeSync(sync) {
+  return JSON.stringify({
+    version: 1,
+    cursor: sync.cursor,
+    owner: sync.owner,
+    cells: Object.values(sync.cells),
+    docs: Object.values(sync.docs),
+  });
+}
+
+// 저장된 동기화 상태 → 검증된 형태. 손상/부재면 빈 상태(cursor 0·빈 outbox)로 시작한다.
+export function parseSync(raw) {
+  if (!raw) return emptySync();
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return emptySync();
+  }
+  if (!data || typeof data !== 'object') return emptySync();
+  const cursor = Number.isSafeInteger(data.cursor) && data.cursor >= 0 ? data.cursor : 0;
+  const owner = typeof data.owner === 'string' ? data.owner : null;
+  const cells = {};
+  if (Array.isArray(data.cells)) {
+    for (const c of data.cells) {
+      if (!c || typeof c !== 'object') continue;
+      if (typeof c.dateKey !== 'string' || typeof c.routineId !== 'string') continue;
+      if (!Number.isSafeInteger(c.ts) || c.ts < 0 || !('value' in c)) continue;
+      cells[cellKey(c.dateKey, c.routineId)] = { dateKey: c.dateKey, routineId: c.routineId, value: c.value, ts: c.ts };
+    }
+  }
+  const docs = {};
+  if (Array.isArray(data.docs)) {
+    for (const d of data.docs) {
+      if (!d || typeof d !== 'object' || !SYNC_DOC_KEYS.has(d.key)) continue;
+      if (!Number.isSafeInteger(d.ts) || d.ts < 0 || !('value' in d)) continue;
+      docs[d.key] = { key: d.key, value: d.value, ts: d.ts };
+    }
+  }
+  return { cursor, owner, cells, docs };
+}
+
+export function loadSync(storage = safeStorage()) {
+  if (!storage) return emptySync();
+  try {
+    return parseSync(storage.getItem(SYNC_KEY));
+  } catch {
+    return emptySync();
+  }
+}
+
+export function saveSync(sync, storage = safeStorage()) {
+  if (!storage) return;
+  try {
+    storage.setItem(SYNC_KEY, serializeSync(sync));
+  } catch {
+    /* noop */
+  }
+}
+
+// 데이터 초기화 시 동기화 상태도 함께 버린다 — 옛 커서·outbox가 남아 초기화된 로컬을
+// 서버 기록으로 되돌리거나 stale 변경을 밀지 않게. (교차 기기 초기화 의미론은 #7 4/4에서.)
+export function clearSync(storage = safeStorage()) {
+  if (!storage) return;
+  try {
+    storage.removeItem(SYNC_KEY);
+  } catch {
+    /* noop */
+  }
+}

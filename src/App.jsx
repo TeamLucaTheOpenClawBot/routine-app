@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PALETTE,
   ICON_KEYS,
@@ -29,7 +29,14 @@ import {
   loadState,
   saveState,
   clearState,
+  emptySync,
+  loadSync,
+  saveSync,
+  enqueueLocalChanges,
+  syncRequest,
+  applySyncResponse,
 } from './appLogic';
+import { postSync } from './syncClient';
 
 // 단색 라인 아이콘(24×24, stroke). 루틴용 + UI용.
 const ICONS = {
@@ -105,7 +112,7 @@ function App() {
   const [form, setForm] = useState(null); // { mode: 'add'|'edit', id }
   const [notice, setNotice] = useState(null); // 찬스 소진 등 일시 안내
   const [notif, setNotif] = useState(() => persisted?.notif ?? true);
-  const [remindHour] = useState(() => persisted?.remindHour ?? 21);
+  const [remindHour, setRemindHour] = useState(() => persisted?.remindHour ?? 21);
   const [weekStart, setWeekStart] = useState(() => persisted?.weekStart ?? 0);
   const scrollRef = useRef(null);
 
@@ -113,6 +120,73 @@ function App() {
   useEffect(() => {
     saveState({ routines, checks, bonusChances, weekStart, notif, remindHour });
   }, [routines, checks, bonusChances, weekStart, notif, remindHour]);
+
+  // ── 클라우드 동기화 (#7 3/4) ─────────────────────────────────────────────
+  // outbox·커서는 유저 데이터와 별도 키(SYNC_KEY)에 둔다. 자주 바뀌고 렌더에 영향이 없어
+  // React state가 아니라 ref로 들고 다닌다. baseline = '지금까지 반영된' 상태 스냅샷 —
+  // 다음 렌더의 상태와 비교해 변경분만 outbox에 쌓는다(편집 지점마다 코드를 흩뿌리지 않기 위함).
+  const syncRef = useRef(null);
+  if (syncRef.current === null) syncRef.current = loadSync();
+  const baselineRef = useRef({ routines, checks, bonusChances, weekStart, notif, remindHour });
+  const syncingRef = useRef(false);
+  const pushTimerRef = useRef(null);
+
+  const runSync = useCallback(async () => {
+    if (syncingRef.current) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    syncingRef.current = true;
+    try {
+      const sent = syncRequest(syncRef.current);
+      const res = await postSync(sent);
+      if (!res.ok) return; // auth(재인증)·offline·server 구분과 안내는 4/4(동기화 상태 UI)에서.
+      // prune·pull은 **현재** outbox 기준으로 한다 — 보낸 뒤 들어온 편집(비행 중 편집)을 잃지 않게.
+      const { state: merged, sync: nextSync } = applySyncResponse(baselineRef.current, syncRef.current, res.data, sent);
+      // 아래 setState가 유발할 적재 effect가 pull분을 로컬 편집으로 오인해 재적재하지 않도록 baseline을 먼저 올린다.
+      baselineRef.current = merged;
+      syncRef.current = nextSync;
+      saveSync(nextSync);
+      setRoutines(merged.routines);
+      setChecks(merged.checks);
+      setBonusChances(merged.bonusChances);
+      setWeekStart(merged.weekStart);
+      setNotif(merged.notif);
+      setRemindHour(merged.remindHour);
+    } finally {
+      syncingRef.current = false;
+    }
+  }, []);
+
+  // 로컬 변경 → outbox 적재(한 곳에서). pull로 인한 변경은 baseline이 함께 올라가 걸러진다.
+  useEffect(() => {
+    const current = { routines, checks, bonusChances, weekStart, notif, remindHour };
+    const next = enqueueLocalChanges(syncRef.current, baselineRef.current, current, Date.now());
+    baselineRef.current = current;
+    if (next === syncRef.current) return undefined; // 변경 없음(동일 참조)
+    syncRef.current = next;
+    saveSync(next);
+    // 여러 편집을 한 왕복으로 묶어 곧 민다(디바운스).
+    clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(() => runSync(), 1200);
+    return undefined;
+  }, [routines, checks, bonusChances, weekStart, notif, remindHour, runSync]);
+
+  // 온라인 복귀·포커스·가시성 복귀·주기적으로 동기화. 마운트 시에도 1회.
+  useEffect(() => {
+    runSync();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') runSync();
+    };
+    const id = setInterval(() => runSync(), 30000);
+    window.addEventListener('online', runSync);
+    window.addEventListener('focus', runSync);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('online', runSync);
+      window.removeEventListener('focus', runSync);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [runSync]);
 
   // 안내는 잠깐만 띄우고 자동으로 사라진다. 새 안내가 오면 타이머도 새로 잡힌다.
   useEffect(() => {
@@ -356,9 +430,18 @@ function App() {
     setBonusChances({});
     setWeekStart(0);
     setNotif(true);
+    setRemindHour(21);
     setForm(null);
     setSheetDay(null);
     setActiveTab('today');
+    // 로컬 초기화는 outbox만 비우고 **커서는 지킨다**. 커서를 0으로 되돌리면 다음 동기화가
+    // 서버에 남은 옛 기록을 seq>0으로 전부 다시 당겨와 초기화가 되돌려진다. 커서를 유지하면
+    // 우리 옛 행은 seq<=커서라 다시 오지 않고, 다른 기기의 새 변경만 흘러온다.
+    // baseline도 기본값으로 맞춰 이 초기화가 삭제 변경으로 outbox에 쌓이지 않게 한다
+    // (서버는 옛 데이터를 그대로 보관 — 교차 기기 초기화 의미론은 #7 4/4).
+    baselineRef.current = { routines: defaultRoutines(), checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 };
+    syncRef.current = { ...emptySync(), cursor: syncRef.current.cursor, owner: syncRef.current.owner };
+    saveSync(syncRef.current);
   };
 
   // 데스크톱에선 480px 컬럼을 중앙 정렬, 모바일에선 뷰포트를 꽉 채운다(목업 프레임·가짜 상태바 제거).

@@ -120,6 +120,19 @@
   - `POST /api/sync`가 push·pull을 한 왕복으로 처리한다(둘로 나누면 중간 상태가 생긴다).
     소유자는 본문이 아니라 **검증된 신원**에서 가져온다. 본문 상한 2MB이고, 초과 시
     응답을 보낸 **뒤에** 연결을 끊는다(먼저 끊으면 413이 전달되지 않는다).
+  - **클라이언트**(#7 3/4 · PR #30): 순수 로직은 `appLogic.js`(테스트 `sync.test.js`), HTTP
+    왕복만 `syncClient.js`(`postSync` — 응답을 auth/offline/toolarge/server로 분류. Access 세션
+    만료는 401뿐 아니라 **HTML 200 리다이렉트**로도 오므로 content-type이 JSON이 아니면 auth로
+    본다). 동기화 상태(cursor·outbox)는 유저 데이터와 **별도 키 `routine-app:sync`**에 둔다 —
+    유저 문서 스키마 v2를 안 건드려, 동기화 없던 이미지로 롤백해도 구버전 앱이 이 키를 모른 채
+    데이터를 그대로 읽는다(STORAGE_KEY 롤백 원칙과 동일). **outbox 적재는 편집 지점마다가 아니라
+    한 곳에서** `diffState(baseline→현재)`로 뽑아 쌓는다(맵이라 같은 칸 재편집은 coalesce). App은
+    baseline ref로 '반영된 상태'를 들고, pull 적용 시 baseline을 함께 올려 pull분이 로컬 편집으로
+    **재적재되지 않게** 한다. prune·pull은 응답 적용 시점의 **현재** outbox 기준이라 비행 중 편집을
+    잃지 않는다(진 로컬 쓰기는 prune으로 빠지고 서버 승자가 pull로 들어와 수렴). 트리거는 마운트·
+    online·focus·visibility·30s 인터벌 + 편집 후 1.2s 디바운스. **데이터 초기화는 outbox만 비우고
+    커서는 지킨다** — 커서를 0으로 되돌리면 다음 동기화가 서버의 옛 기록을 전부 되당겨와 초기화가
+    무효가 된다(교차 기기 초기화 의미론은 4/4). 최초 로컬→클라우드 마이그레이션·동기화 상태 UI는 4/4.
 
 ## 로드맵 단계 메모
 
