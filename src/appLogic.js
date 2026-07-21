@@ -519,9 +519,19 @@ export function enqueueLocalChanges(sync, prev, next, ts) {
   return out;
 }
 
-// POST /api/sync 본문 스냅샷 — 지금 outbox에 쌓인 전부 + 커서.
+// POST /api/sync 본문 스냅샷 — 지금 outbox에 쌓인 전부 + 커서. owner가 있으면 expectedOwner로
+// 실어 보낸다 — getMe와 push 사이에 세션이 바뀌는 TOCTOU를 서버가 한 요청 안에서 막게 한다
+// (서버가 세션 소유자와 다르면 거부). 최초 동기화(owner 미확정)엔 붙이지 않는다.
 export function syncRequest(sync) {
-  return { cursor: sync.cursor, cells: Object.values(sync.cells), docs: Object.values(sync.docs) };
+  const req = { cursor: sync.cursor, cells: Object.values(sync.cells), docs: Object.values(sync.docs) };
+  if (sync.owner) req.expectedOwner = sync.owner;
+  return req;
+}
+
+// 단조 증가 논리 시각. 이전 발급값보다 항상 크되(시계 역행 방어) 안전정수 상한을 넘지 않는다
+// — 넘으면 서버 정규화가 그 값을 드롭해 편집이 화면엔 있고 영속되지 않는다(#30 Codex P2).
+export function nextTs(lastTs, now) {
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.max(now, (lastTs ?? 0) + 1));
 }
 
 // 한 칸을 checks에 반영(순수). value null/undefined면 삭제. cycleCheck의 setValue와 같은 규칙.

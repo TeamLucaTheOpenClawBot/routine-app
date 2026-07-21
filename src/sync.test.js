@@ -4,6 +4,7 @@ import {
   diffState,
   emptySync,
   enqueueLocalChanges,
+  nextTs,
   parseSync,
   queueCell,
   serializeSync,
@@ -60,6 +61,17 @@ describe('outbox 적재 + coalesce', () => {
   it('enqueueLocalChanges가 diff를 ts와 함께 쌓는다', () => {
     const sync = enqueueLocalChanges(emptySync(), baseState(), baseState({ checks: { '2026-07-20': { r1: true } } }), 100);
     expect(syncRequest(sync).cells).toEqual([{ dateKey: '2026-07-20', routineId: 'r1', value: true, ts: 100 }]);
+  });
+
+  it('syncRequest는 owner가 있을 때만 expectedOwner를 싣는다', () => {
+    expect(syncRequest(emptySync()).expectedOwner).toBeUndefined();
+    expect(syncRequest({ ...emptySync(), owner: 'sub-1' }).expectedOwner).toBe('sub-1');
+  });
+
+  it('nextTs는 단조 증가하고 안전정수 상한을 넘지 않는다', () => {
+    expect(nextTs(1000, 500)).toBe(1001); // 시계가 뒤로 가도 이전값+1
+    expect(nextTs(1000, 2000)).toBe(2000); // now가 크면 now
+    expect(nextTs(Number.MAX_SAFE_INTEGER, 9999999999999)).toBe(Number.MAX_SAFE_INTEGER); // 상한
   });
 
   it('같은 칸을 다시 적재하면 마지막 값만 남는다(coalesce)', () => {

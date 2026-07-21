@@ -123,6 +123,14 @@ const server = createServer(async (req, res) => {
     const owner = auth.sub;
     if (!owner) return json(res, 401, { error: 'unauthorized', reason: 'no_subject' });
 
+    // 클라이언트가 기대하는 소유자를 함께 보내면 세션 소유자와 대조해 다르면 거부한다. 클라이언트가
+    // 신원을 확인한 뒤 이 요청을 보내기까지 사이에 (다른 탭 재인증 등으로) 세션이 바뀌면, 확인·쓰기가
+    // 별개 요청이라 남의 계정에 데이터가 쓰인다 — expectedOwner를 여기서 검증해 그 TOCTOU를 한
+    // 요청 안에서 닫는다. 최초 동기화(owner 미확정)엔 없으므로 있을 때만 대조한다. 쓰기 전에 막는다.
+    if (typeof payload.expectedOwner === 'string' && payload.expectedOwner !== owner) {
+      return json(res, 409, { error: 'owner_mismatch', owner });
+    }
+
     try {
       return json(res, 200, store.sync(owner, payload));
     } catch (err) {

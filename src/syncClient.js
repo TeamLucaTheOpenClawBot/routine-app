@@ -14,6 +14,15 @@ const pickFetch = (fetchImpl) => fetchImpl ?? (typeof fetch !== 'undefined' ? fe
 async function classify(res) {
   if (res.status === 401 || res.status === 403) return { ok: false, kind: 'auth', status: res.status };
   if (res.status === 413) return { ok: false, kind: 'toolarge', status: res.status };
+  // 409 = owner_mismatch: 세션이 다른 계정으로 바뀐 채 밀었다(서버가 쓰기 전에 거부). body의
+  // owner로 새 소유자를 알 수 있으므로 파싱해 넘긴다 — 클라이언트가 outbox·커서를 재설정한다.
+  if (res.status === 409) {
+    try {
+      return { ok: false, kind: 'conflict', data: await res.json() };
+    } catch {
+      return { ok: false, kind: 'conflict' };
+    }
+  }
   const ctype = res.headers.get('content-type') ?? '';
   if (!ctype.includes('application/json')) return { ok: false, kind: 'auth', status: res.status };
   if (!res.ok) return { ok: false, kind: 'server', status: res.status };

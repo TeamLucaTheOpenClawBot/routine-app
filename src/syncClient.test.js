@@ -45,6 +45,11 @@ describe('postSync 분류', () => {
   it('JSON인데 5xx면 server', async () => {
     expect((await postSync({}, { fetchImpl: async () => jsonRes(500, { error: 'sync_failed' }) })).kind).toBe('server');
   });
+
+  it('409는 conflict로 body(owner)를 파싱해 넘긴다', async () => {
+    const out = await postSync({}, { fetchImpl: async () => jsonRes(409, { error: 'owner_mismatch', owner: 'sub-2' }) });
+    expect(out).toEqual({ ok: false, kind: 'conflict', data: { error: 'owner_mismatch', owner: 'sub-2' } });
+  });
 });
 
 describe('getMe — 세션 신원 확인', () => {

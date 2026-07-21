@@ -35,8 +35,9 @@ import {
   enqueueLocalChanges,
   syncRequest,
   applySyncResponse,
+  nextTs,
 } from './appLogic';
-import { getMe, postSync } from './syncClient';
+import { postSync } from './syncClient';
 
 // 단색 라인 아이콘(24×24, stroke). 루틴용 + UI용.
 const ICONS = {
@@ -136,7 +137,7 @@ function App() {
   // 단조 증가 논리 시각을 발급한다. 기기 시계가 뒤로 가도 새 편집의 ts가 서버 저장값보다 낮아
   // LWW에서 조용히 지는 걸 막는다(#30 Codex P2). lastTs는 sync 상태에 실려 영속·pull로 갱신된다.
   const issueTs = () => {
-    const ts = Math.max(Date.now(), (syncRef.current.lastTs ?? 0) + 1);
+    const ts = nextTs(syncRef.current.lastTs, Date.now());
     syncRef.current = { ...syncRef.current, lastTs: ts };
     return ts;
   };
@@ -157,23 +158,20 @@ function App() {
     syncingRef.current = true;
     const gen = syncGenRef.current; // 이 왕복이 시작된 세대. 도중에 초기화되면 응답을 버린다.
     try {
-      // **매 push마다** 세션 신원을 확인한다. outbox·커서는 특정 소유자(sub)의 것이라, 세션이
-      // 다른 계정으로 바뀐 채로 밀면 A의 데이터가 B 계정에 쓰이고(서버는 소유자를 세션에서 가져온다),
-      // A의 커서를 그대로 쓰면 B의 옛 행(seq<=커서)이 영영 안 보인다. Access 세션은 **다른 탭**에서
-      // 재인증되면 이 탭 리로드 없이도 바뀌므로(쿠키 공유) '세션당 1회'로는 막지 못한다. 신원이
-      // 바뀌었으면 outbox·커서를 폐기한다(로컬 계정 전환 UX·데이터 정리는 #7 4/4).
-      const me = await getMe();
-      if (!me.ok || typeof me.data?.sub !== 'string') return; // 신원 미확정이면 이번엔 밀지 않는다
-      if (syncGenRef.current !== gen) return; // getMe 대기 중 초기화됐으면 버린다
-      if (syncRef.current.owner && syncRef.current.owner !== me.data.sub) {
-        syncRef.current = { ...emptySync(), owner: me.data.sub, lastTs: syncRef.current.lastTs }; // 계정 바뀜 → outbox·커서 폐기(ts는 단조 유지)
-        saveSync(syncRef.current);
-      } else if (!syncRef.current.owner) {
-        syncRef.current = { ...syncRef.current, owner: me.data.sub }; // 최초 확정 — 우리 것이라 유지
-        saveSync(syncRef.current);
-      }
+      // 신원 확인과 push를 **한 요청**으로 원자화한다. syncRequest가 outbox 소유자를 expectedOwner로
+      // 실어 보내고, 서버는 세션 소유자와 다르면 쓰기 전에 409로 거부한다 — getMe와 push를 나누면 그
+      // 사이 (다른 탭 재인증 등으로) 세션이 바뀔 때 남의 계정에 쓰는 TOCTOU가 남기 때문이다. 최초
+      // 동기화(owner 미확정)엔 expectedOwner가 없어 서버가 쓰고 응답의 owner로 소유자가 확정된다.
       const sent = syncRequest(syncRef.current);
       const res = await postSync(sent);
+      if (res.kind === 'conflict') {
+        // 세션이 다른 계정으로 바뀐 채 밀었다(서버 거부, 쓰기 없음). outbox·커서를 폐기하고 새
+        // 소유자로 다시 시작한다(ts는 단조 유지). 로컬 계정 전환 UX·데이터 정리는 #7 4/4.
+        const newOwner = typeof res.data?.owner === 'string' ? res.data.owner : null;
+        syncRef.current = { ...emptySync(), owner: newOwner, lastTs: syncRef.current.lastTs };
+        saveSync(syncRef.current);
+        return;
+      }
       if (!res.ok) return; // auth(재인증)·offline·server 구분과 안내는 4/4(동기화 상태 UI)에서.
       // 대기 중 데이터 초기화가 있었으면 이 응답은 **초기화 전 커서**로 받은 것이라, 병합하면
       // 방금 지운 routines/checks가 되살아난다 → 세대가 바뀌었으면 통째로 버린다.
