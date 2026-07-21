@@ -131,6 +131,7 @@ function App() {
   const syncingRef = useRef(false);
   const pushTimerRef = useRef(null);
   const sessionOwnerRef = useRef(null); // 이 세션에서 확정된 신원(sub). 마운트마다 null로 시작.
+  const syncGenRef = useRef(0); // 세대 번호. 데이터 초기화가 세대를 올려 비행 중 응답 적용을 무효화한다.
   // 최신 **커밋된** 상태를 렌더마다 동기적으로 담아둔다. runSync는 async라, await를 건너 돌아온
   // 사이에 사용자가 편집하면 baseline은 아직 편집 전(패시브 effect가 안 돌았을 수 있다) — 그때
   // liveState로 비행 중 편집을 응답 적용 전에 반영해 덮어쓰기를 막는다(#30 Codex P1).
@@ -141,6 +142,7 @@ function App() {
     if (syncingRef.current) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     syncingRef.current = true;
+    const gen = syncGenRef.current; // 이 왕복이 시작된 세대. 도중에 초기화되면 응답을 버린다.
     try {
       // 밀기 전에 세션 신원을 확정한다(세션당 1회). outbox·커서는 특정 소유자(sub)의 것이라,
       // 세션이 다른 계정으로 바뀐 채로 밀면 A의 데이터가 B 계정에 쓰이고(서버는 소유자를 세션에서
@@ -162,6 +164,9 @@ function App() {
       const sent = syncRequest(syncRef.current);
       const res = await postSync(sent);
       if (!res.ok) return; // auth(재인증)·offline·server 구분과 안내는 4/4(동기화 상태 UI)에서.
+      // 대기 중 데이터 초기화가 있었으면 이 응답은 **초기화 전 커서**로 받은 것이라, 병합하면
+      // 방금 지운 routines/checks가 되살아난다 → 세대가 바뀌었으면 통째로 버린다.
+      if (syncGenRef.current !== gen) return;
       // 응답 적용 전에, 비행 중 들어온 로컬 편집을 먼저 outbox에 반영한다. 이 편집은 패시브 적재
       // effect가 아직 안 돌아 baseline·outbox에 없을 수 있는데, 그대로 두면 아래 setState가 merged로
       // 덮어써 편집이 UI·outbox 양쪽에서 사라진다. 여기서 latest 커밋 상태(liveState)를 기준으로
@@ -471,6 +476,8 @@ function App() {
     baselineRef.current = { routines: defaultRoutines(), checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 };
     syncRef.current = { ...emptySync(), cursor: syncRef.current.cursor, owner: syncRef.current.owner };
     saveSync(syncRef.current);
+    // 대기 중인 sync 응답이 초기화 전 커서로 받은 데이터를 되살리지 않도록 세대를 올린다.
+    syncGenRef.current += 1;
   };
 
   // 데스크톱에선 480px 컬럼을 중앙 정렬, 모바일에선 뷰포트를 꽉 채운다(목업 프레임·가짜 상태바 제거).

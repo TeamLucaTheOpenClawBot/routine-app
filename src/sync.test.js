@@ -150,6 +150,18 @@ describe('applySyncResponse — prune + pull 반영', () => {
     expect(out.state.checks).toEqual({ '2026-07-20': { r1: true } }); // r2 고아 체크 제거
   });
 
+  it('루틴 삭제 pull 시 그 루틴의 pending cell도 outbox에서 뺀다 (#30 Codex P2)', () => {
+    const r2 = { id: 'r2', name: '독서', iconKey: 'book', color: '#2563EB', goalType: 'atLeast', goalCount: 3, visible: true };
+    const state = baseState({ routines: [...R, r2], checks: { '2026-07-20': { r1: true, r2: true } } });
+    // r2 체크가 아직 안 밀린 채 outbox에 있음
+    let sync = queueCell(emptySync(), '2026-07-20', 'r2', true, 100);
+    const resp = { owner: 'sub-1', cursor: 6, cells: [], docs: [{ key: 'routines', value: R, ts: 200 }] };
+    const out = applySyncResponse(state, sync, resp, { cells: [], docs: [] });
+    // 남겨두면 다음 sync가 r2 cell을 되쓰고 applyCell이 고아를 복원하므로, outbox에서도 제거
+    expect(out.sync.cells['2026-07-20\tr2']).toBeUndefined();
+    expect(out.state.checks).toEqual({ '2026-07-20': { r1: true } });
+  });
+
   it('아직 못 민 로컬 doc이 있으면 그 키의 pull은 무시한다(로컬 우선)', () => {
     const state = baseState({ weekStart: 1 });
     // settings를 로컬에서 바꿔 outbox에 있음(아직 안 보냄)

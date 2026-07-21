@@ -580,7 +580,15 @@ export function applySyncResponse(state, sync, resp, sent) {
   // 체크를 못 봐서 그 칸 툼스톤을 못 보낸다). nextRoutineId는 최고 id를 재사용하므로, 고아를
   // 두면 재활용된 id의 새 루틴에 옛 완료가 되살아난다 — 로컬 deleteRoutine이 purgeRoutineChecks로
   // 막는 것과 같은 불변식이라, 수용된 루틴 id 집합으로 여기서도 정리한다(로드 시점과 동일).
-  if (pulledDocs.some((d) => d.key === 'routines')) checks = sanitizeChecks(checks, ids);
+  // 화면 checks뿐 아니라 **pending cells outbox도** 같이 비운다 — 남겨두면 그 cell이 다음 sync에
+  // 서버로 되쓰이고, 커서가 이미 삭제 문서를 지나 다음 응답엔 routines 문서가 없어 applyCell이
+  // 고아 체크를 복원한다(체크만 정리하면 되살아나는 경로).
+  if (pulledDocs.some((d) => d.key === 'routines')) {
+    checks = sanitizeChecks(checks, ids);
+    for (const k of Object.keys(cells)) {
+      if (!ids.has(cells[k].routineId)) delete cells[k];
+    }
+  }
 
   const owner = typeof resp.owner === 'string' ? resp.owner : sync.owner;
   const cursor = Number.isSafeInteger(resp.cursor) && resp.cursor >= 0 ? resp.cursor : sync.cursor;
