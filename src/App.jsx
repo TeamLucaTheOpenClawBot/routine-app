@@ -131,6 +131,11 @@ function App() {
   const syncingRef = useRef(false);
   const pushTimerRef = useRef(null);
   const sessionOwnerRef = useRef(null); // 이 세션에서 확정된 신원(sub). 마운트마다 null로 시작.
+  // 최신 **커밋된** 상태를 렌더마다 동기적으로 담아둔다. runSync는 async라, await를 건너 돌아온
+  // 사이에 사용자가 편집하면 baseline은 아직 편집 전(패시브 effect가 안 돌았을 수 있다) — 그때
+  // liveState로 비행 중 편집을 응답 적용 전에 반영해 덮어쓰기를 막는다(#30 Codex P1).
+  const liveStateRef = useRef(null);
+  liveStateRef.current = { routines, checks, bonusChances, weekStart, notif, remindHour };
 
   const runSync = useCallback(async () => {
     if (syncingRef.current) return;
@@ -157,8 +162,14 @@ function App() {
       const sent = syncRequest(syncRef.current);
       const res = await postSync(sent);
       if (!res.ok) return; // auth(재인증)·offline·server 구분과 안내는 4/4(동기화 상태 UI)에서.
-      // prune·pull은 **현재** outbox 기준으로 한다 — 보낸 뒤 들어온 편집(비행 중 편집)을 잃지 않게.
-      const { state: merged, sync: nextSync } = applySyncResponse(baselineRef.current, syncRef.current, res.data, sent);
+      // 응답 적용 전에, 비행 중 들어온 로컬 편집을 먼저 outbox에 반영한다. 이 편집은 패시브 적재
+      // effect가 아직 안 돌아 baseline·outbox에 없을 수 있는데, 그대로 두면 아래 setState가 merged로
+      // 덮어써 편집이 UI·outbox 양쪽에서 사라진다. 여기서 latest 커밋 상태(liveState)를 기준으로
+      // 반영해 두면 아래 병합이 그 편집을 pending으로 인식해 지키고, 다음 왕복에 밀린다.
+      const live = liveStateRef.current ?? baselineRef.current;
+      syncRef.current = enqueueLocalChanges(syncRef.current, baselineRef.current, live, Date.now());
+      // prune·pull은 **현재** outbox + latest 상태 기준으로 한다 — 보낸 뒤 들어온 편집을 잃지 않게.
+      const { state: merged, sync: nextSync } = applySyncResponse(live, syncRef.current, res.data, sent);
       // 아래 setState가 유발할 적재 effect가 pull분을 로컬 편집으로 오인해 재적재하지 않도록 baseline을 먼저 올린다.
       baselineRef.current = merged;
       syncRef.current = nextSync;

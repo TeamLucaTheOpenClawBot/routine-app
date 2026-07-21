@@ -127,6 +127,19 @@ describe('applySyncResponse — prune + pull 반영', () => {
     expect(settingsDoc(out.state)).toEqual({ weekStart: 1, notif: false, remindHour: 8 });
   });
 
+  it('비행 중 편집(아직 outbox에 없던)을 응답 적용 전 반영하면 pull이 덮지 않는다 (#30 Codex P1)', () => {
+    // runSync가 응답 적용 직전에 하는 일: baseline→live 편집을 먼저 outbox에 반영.
+    const baseline = baseState(); // 편집 전(패시브 effect 미실행 가정)
+    const live = baseState({ checks: { '2026-07-20': { r1: true } } }); // 비행 중 사용자가 체크
+    const sent = { cells: [], docs: [] }; // 보낼 땐 outbox가 비어 있었다
+    let sync = enqueueLocalChanges(emptySync(), baseline, live, 300); // 응답 적용 전 반영
+    // 서버는 다른 기기의 X 삭제(ts 50)를 승자로 돌려주지만, 로컬 편집(ts 300)이 pending이라 우선
+    const resp = { owner: 'sub-1', cursor: 4, cells: [{ dateKey: '2026-07-20', routineId: 'r1', value: null, ts: 50 }], docs: [] };
+    const out = applySyncResponse(live, sync, resp, sent);
+    expect(out.state.checks).toEqual({ '2026-07-20': { r1: true } }); // 편집 보존
+    expect(out.sync.cells['2026-07-20\tr1'].value).toBe(true); // 다음 왕복에 밀리도록 남음
+  });
+
   it('아직 못 민 로컬 doc이 있으면 그 키의 pull은 무시한다(로컬 우선)', () => {
     const state = baseState({ weekStart: 1 });
     // settings를 로컬에서 바꿔 outbox에 있음(아직 안 보냄)
