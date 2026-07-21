@@ -4,9 +4,43 @@
 // (#7 설계의 함정 — Access 세션 만료는 조용한 동기화 중단이 되기 쉽다).
 
 export const SYNC_ENDPOINT = '/api/sync';
+export const ME_ENDPOINT = '/api/me';
+
+const pickFetch = (fetchImpl) => fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+
+// 응답을 공통 분류한다. Access 세션 만료 시 엣지는 JSON이 아니라 로그인으로 응답한다
+// (401/403 또는 HTML 200 리다이렉트) → 둘 다 auth로 본다. HTML을 JSON으로 파싱하려 들면
+// 앱이 조용히 깨지므로 content-type이 JSON이 아니면 여기서 걸러 재인증을 안내하게 한다.
+async function classify(res) {
+  if (res.status === 401 || res.status === 403) return { ok: false, kind: 'auth', status: res.status };
+  if (res.status === 413) return { ok: false, kind: 'toolarge', status: res.status };
+  const ctype = res.headers.get('content-type') ?? '';
+  if (!ctype.includes('application/json')) return { ok: false, kind: 'auth', status: res.status };
+  if (!res.ok) return { ok: false, kind: 'server', status: res.status };
+  try {
+    return { ok: true, data: await res.json() };
+  } catch {
+    return { ok: false, kind: 'server', status: res.status };
+  }
+}
+
+// 현재 세션의 검증된 신원({ email, sub })을 가져온다. 동기화 전에 outbox·커서가 지금 세션의
+// 소유자(sub) 것인지 확인하는 용도 — 계정이 바뀐 채로 밀면 남의 계정에 데이터가 쓰인다.
+export async function getMe({ fetchImpl, signal } = {}) {
+  const doFetch = pickFetch(fetchImpl);
+  if (!doFetch) return { ok: false, kind: 'offline' };
+  let res;
+  try {
+    res = await doFetch(ME_ENDPOINT, { method: 'GET', signal, credentials: 'same-origin' });
+  } catch (err) {
+    if (err && err.name === 'AbortError') return { ok: false, kind: 'aborted' };
+    return { ok: false, kind: 'offline' };
+  }
+  return classify(res);
+}
 
 export async function postSync(request, { fetchImpl, signal } = {}) {
-  const doFetch = fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : null);
+  const doFetch = pickFetch(fetchImpl);
   if (!doFetch) return { ok: false, kind: 'offline' };
 
   let res;
@@ -24,21 +58,5 @@ export async function postSync(request, { fetchImpl, signal } = {}) {
     return { ok: false, kind: 'offline' };
   }
 
-  // Access 세션 만료 시 엣지가 JSON이 아니라 로그인으로 응답한다(401/403 또는 HTML 리다이렉트).
-  if (res.status === 401 || res.status === 403) return { ok: false, kind: 'auth', status: res.status };
-  if (res.status === 413) return { ok: false, kind: 'toolarge', status: res.status };
-
-  const ctype = res.headers.get('content-type') ?? '';
-  if (!ctype.includes('application/json')) {
-    // HTML(로그인 페이지 등)이 200으로 돌아오는 경우 — 세션 만료로 본다. 이걸 JSON으로
-    // 파싱하려 들면 앱이 조용히 깨지므로 여기서 auth로 분류해 재인증을 안내한다.
-    return { ok: false, kind: 'auth', status: res.status };
-  }
-  if (!res.ok) return { ok: false, kind: 'server', status: res.status };
-
-  try {
-    return { ok: true, data: await res.json() };
-  } catch {
-    return { ok: false, kind: 'server', status: res.status };
-  }
+  return classify(res);
 }

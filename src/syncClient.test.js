@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { postSync } from './syncClient.js';
+import { getMe, postSync } from './syncClient.js';
 
 const jsonRes = (status, body) => ({
   status,
@@ -44,5 +44,18 @@ describe('postSync 분류', () => {
 
   it('JSON인데 5xx면 server', async () => {
     expect((await postSync({}, { fetchImpl: async () => jsonRes(500, { error: 'sync_failed' }) })).kind).toBe('server');
+  });
+});
+
+describe('getMe — 세션 신원 확인', () => {
+  it('200 JSON이면 { email, sub }를 돌려준다', async () => {
+    const out = await getMe({ fetchImpl: async () => jsonRes(200, { email: 'me@x.com', sub: 'sub-1' }) });
+    expect(out).toEqual({ ok: true, data: { email: 'me@x.com', sub: 'sub-1' } });
+  });
+
+  it('401·HTML 리다이렉트는 auth, 네트워크 실패는 offline', async () => {
+    expect((await getMe({ fetchImpl: async () => jsonRes(401, {}) })).kind).toBe('auth');
+    expect((await getMe({ fetchImpl: async () => htmlRes(200) })).kind).toBe('auth');
+    expect((await getMe({ fetchImpl: async () => { throw new Error('net'); } })).kind).toBe('offline');
   });
 });

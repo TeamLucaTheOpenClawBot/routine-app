@@ -36,7 +36,7 @@ import {
   syncRequest,
   applySyncResponse,
 } from './appLogic';
-import { postSync } from './syncClient';
+import { getMe, postSync } from './syncClient';
 
 // 단색 라인 아이콘(24×24, stroke). 루틴용 + UI용.
 const ICONS = {
@@ -130,12 +130,30 @@ function App() {
   const baselineRef = useRef({ routines, checks, bonusChances, weekStart, notif, remindHour });
   const syncingRef = useRef(false);
   const pushTimerRef = useRef(null);
+  const sessionOwnerRef = useRef(null); // 이 세션에서 확정된 신원(sub). 마운트마다 null로 시작.
 
   const runSync = useCallback(async () => {
     if (syncingRef.current) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     syncingRef.current = true;
     try {
+      // 밀기 전에 세션 신원을 확정한다(세션당 1회). outbox·커서는 특정 소유자(sub)의 것이라,
+      // 세션이 다른 계정으로 바뀐 채로 밀면 A의 데이터가 B 계정에 쓰이고(서버는 소유자를 세션에서
+      // 가져온다), A의 커서를 그대로 쓰면 B의 옛 행(seq<=커서)이 영영 안 보인다. 신원이 바뀌었으면
+      // outbox를 버리고 커서를 0으로 리셋한다(로컬 계정 전환 UX·데이터 정리는 #7 4/4).
+      // Access 재인증은 리다이렉트→리로드라 새 세션에서 이 게이트가 다시 걸린다.
+      if (sessionOwnerRef.current === null) {
+        const me = await getMe();
+        if (!me.ok || typeof me.data?.sub !== 'string') return; // 신원 미확정이면 이번엔 밀지 않는다
+        sessionOwnerRef.current = me.data.sub;
+        if (syncRef.current.owner && syncRef.current.owner !== me.data.sub) {
+          syncRef.current = { ...emptySync(), owner: me.data.sub }; // 계정 바뀜 → outbox·커서 폐기
+          saveSync(syncRef.current);
+        } else if (!syncRef.current.owner) {
+          syncRef.current = { ...syncRef.current, owner: me.data.sub }; // 최초 확정 — 우리 것이라 유지
+          saveSync(syncRef.current);
+        }
+      }
       const sent = syncRequest(syncRef.current);
       const res = await postSync(sent);
       if (!res.ok) return; // auth(재인증)·offline·server 구분과 안내는 4/4(동기화 상태 UI)에서.
