@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           # API 이미지(server/Dockerfile)의 node:24-alpine과 맞춘다.
-          # 20에서는 server/가 쓰는 node:sqlite(22.5+)가 없어 테스트가 깨진다 —
+          # 20에서는 server/가 쓰는 node:sqlite(실요구 하한 22.13, engines 참조)가 없어 테스트가 깨진다 —
           # CI 런타임이 배포 런타임보다 낮으면 이런 차이가 머지 후에야 드러난다.
           node-version: 24
           cache: npm
