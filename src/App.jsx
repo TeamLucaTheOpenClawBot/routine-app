@@ -132,6 +132,7 @@ function App() {
   const pushTimerRef = useRef(null);
   const sessionOwnerRef = useRef(null); // 이 세션에서 확정된 신원(sub). 마운트마다 null로 시작.
   const syncGenRef = useRef(0); // 세대 번호. 데이터 초기화가 세대를 올려 비행 중 응답 적용을 무효화한다.
+  const syncPendingRef = useRef(false); // 요청 중 트리거가 막혔음을 기록 — 끝나면 재실행한다.
   // 최신 **커밋된** 상태를 렌더마다 동기적으로 담아둔다. runSync는 async라, await를 건너 돌아온
   // 사이에 사용자가 편집하면 baseline은 아직 편집 전(패시브 effect가 안 돌았을 수 있다) — 그때
   // liveState로 비행 중 편집을 응답 적용 전에 반영해 덮어쓰기를 막는다(#30 Codex P1).
@@ -139,7 +140,12 @@ function App() {
   liveStateRef.current = { routines, checks, bonusChances, weekStart, notif, remindHour };
 
   const runSync = useCallback(async () => {
-    if (syncingRef.current) return;
+    // 이미 왕복 중이면 이번 트리거를 버리지 않고 pending으로 기록한다 — 요청이 디바운스보다
+    // 오래 걸려 그 사이 편집이 outbox에 쌓이면, 끝난 뒤 재실행해야 다음 인터벌(30s)까지 밀리지 않는다.
+    if (syncingRef.current) {
+      syncPendingRef.current = true;
+      return;
+    }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     syncingRef.current = true;
     const gen = syncGenRef.current; // 이 왕복이 시작된 세대. 도중에 초기화되면 응답을 버린다.
@@ -187,6 +193,13 @@ function App() {
       setRemindHour(merged.remindHour);
     } finally {
       syncingRef.current = false;
+      // 요청 중 트리거가 막혔으면(그 사이 편집이 쌓였을 수 있다) 곧 재실행한다. 재귀 대신 예약해
+      // 스택·락 문제를 피하고, 플래그를 먼저 내려 무한 루프를 막는다.
+      if (syncPendingRef.current) {
+        syncPendingRef.current = false;
+        clearTimeout(pushTimerRef.current);
+        pushTimerRef.current = setTimeout(() => runSync(), 0);
+      }
     }
   }, []);
 
@@ -216,6 +229,7 @@ function App() {
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(id);
+      clearTimeout(pushTimerRef.current); // 디바운스·재실행 예약 타이머도 정리(언마운트 후 실행 방지).
       window.removeEventListener('online', runSync);
       window.removeEventListener('focus', runSync);
       document.removeEventListener('visibilitychange', onVisible);
