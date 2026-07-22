@@ -462,9 +462,14 @@ function App() {
   // ── 데일리 리마인더 (#6 1단계, best-effort) ────────────────────────────────
   // 신뢰성 있는 폰 잠금 알림은 서버 푸시(VAPID+크론)가 필요하다(#6 2단계). 여기선 권한을 받고,
   // **앱이 열려 있는 동안** 지정 시각에 SW/페이지 알림을 띄운다(탭이 살아 있어야 동작 — 한계 명시).
-  const todayLeft = todayRows.length - todayDone;
-  const remindInfoRef = useRef(0);
-  remindInfoRef.current = todayLeft; // 알림 시점의 미완료 수를 최신으로 유지(타이머 재설정 없이).
+  // 알림 발화 시점의 미완료 수는 **그때 fresh 날짜로 직접** 센다 — `today` 상태는 자정 후 500ms에야
+  // 갱신되므로(자정 리마인더 remindHour=0이면 발화가 그보다 빠르다), pre-render 값을 쓰면 전날 수로
+  // 알린다(#34 Codex P2). liveStateRef의 현재 루틴·체크로 계산해 타이머 재설정도 필요 없다.
+  const remainingToday = () => {
+    const key = formatDateKey(startOfToday());
+    const st = liveStateRef.current;
+    return st.routines.filter((r) => r.visible && checkState(st.checks, key, r.id) === 'none').length;
+  };
 
   // **실제 켜짐** = 사용자 선호(notif) + 브라우저 권한(granted). notif 기본값이 true여도 권한이
   // default/denied면 알림이 안 뜨므로, 토글 표시·분기·시각편집을 이 파생값에 맞춘다 — 미허용 상태에서
@@ -498,9 +503,10 @@ function App() {
     if (!notif || notifPerm !== 'granted' || typeof window === 'undefined') return undefined;
     let timer;
     const fire = () => {
-      if (remindInfoRef.current <= 0) return; // 오늘 다 했으면 안 보낸다
+      const left = remainingToday();
+      if (left <= 0) return; // 오늘 다 했으면 안 보낸다
       const title = '루틴 체크';
-      const body = `오늘 루틴 ${remindInfoRef.current}개 남았어요. 마무리해볼까요?`;
+      const body = `오늘 루틴 ${left}개 남았어요. 마무리해볼까요?`;
       const opts = { body, icon: '/pwa-192x192.png', badge: '/pwa-192x192.png', tag: 'daily-reminder' };
       try {
         if (navigator.serviceWorker?.controller) {

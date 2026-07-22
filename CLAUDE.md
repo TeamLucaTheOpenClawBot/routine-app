@@ -164,8 +164,10 @@
   **실제 켜짐은 `notif && notifPerm==='granted'`**(`remindersOn`)로 판정한다 — notif 기본값이 true여도
   권한이 없으면 토글을 꺼짐으로 보여, "켜짐인데 안 뜨는" 모순과 두 번 눌러야 권한 요청되는 문제를 없앤다.
   예약 시각은 순수 함수 `nextReminderAt(now, remindHour)`(자정 넘김·정각 중복발화 방지, 테스트 대상)로
-  구하고, App이 `setTimeout`으로 예약→발화→다음날 재예약한다. 미완료 수는 ref로 읽어(타이머 재설정 없이)
-  체크할 때마다 재예약되지 않게 한다. 알림은 SW `registration.showNotification`(설치 PWA), 없으면
+  구하고, App이 `setTimeout`으로 예약→발화→다음날 재예약한다(deps는 notif·notifPerm·remindHour뿐이라
+  체크할 때마다 재예약되지 않는다). 미완료 수는 **발화 시점에 `startOfToday()` fresh 날짜로 직접** 센다 —
+  `today` 상태는 자정 후 500ms에 갱신되므로 remindHour=0(자정) 발화가 그보다 빨라 전날 수로 알릴 수 있다.
+  알림은 SW `registration.showNotification`(설치 PWA), 없으면
   `new Notification()`으로. **한계**: 탭이 살아 있어야 동작한다 — 폰 잠금 상태 정시 알림은 **서버
   Web Push(VAPID+구독 저장+매일 크론)**가 필요하고 #6 2단계다(#7 백엔드 위에 얹는다). `remindHour`는
   설정의 시각 셀렉트로 편집(0~23), notif/remindHour는 기존대로 영속·동기화된다.
