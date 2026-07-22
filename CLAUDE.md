@@ -187,7 +187,14 @@
   알림"에서 켠다(동기화 연결+권한 전제). **연결 해제(`disableSync`)는 `unsubscribePush`로 서버 행·브라우저
   구독까지 지운다**(안 하면 다른 기기 발송이 계속 오고 해제 UI도 사라진다). **재키잉도 push_subs를 함께
   이관**한다(`rekey.js`가 `pushStore.rekeyOwner` 호출 — 안 하면 sub 변경 후 푸시를 못 받는다).
-  **매일 정시 자동 발송(크론·타임존·미완료 판정)은 #6 2b**.
+- **알림 2b — 매일 정시 크론**(#6 · PR #37): API 프로세스 **in-process `setInterval`(1분)**이 모든 구독을
+  훑어 정시 발송한다(`cron.js`). 판정은 순수 `reminders.js`(테스트 대상): `localDateParts(now, tz)`(Intl로
+  DST 반영), `incompleteToday(routines, checkedIds)`(클라 remainingToday 서버판), `shouldRemind`(알림 켜짐·
+  로컬 시=remindHour·오늘 미발송·미완료>0). **타임존은 구독에 IANA 문자열로 저장**한다(클라가 subscribe 때
+  동봉 — offset보다 DST에 견고) — remindHour는 사용자값(settings doc)이지만 로컬 시각은 기기 tz라, 발송
+  타이밍은 구독 단위로 계산한다. `last_sent`(로컬 날짜)로 **하루 1회** 보장(같은 날 재틱은 skip). 미완료는
+  `store.getDoc('routines')` + `store.checkedRoutineIds(owner, dateKey)`(non-null 셀)로 서버가 직접 센다.
+  발송기(VAPID) 없으면 tick은 no-op. `push_subs`에 `tz`·`last_sent` 컬럼 추가(기존 DB는 idempotent ALTER 마이그레이션).
 
 ## 로드맵 단계 메모
 
@@ -201,5 +208,5 @@
 - Phase 3: ~~#7 백엔드·계정·클라우드 동기화~~(**완료** · 1/4 스캐폴드 PR #27 · 2/4 저장소 PR #28 ·
   3/4 클라이언트 동기화 엔진 PR #30 · 4/4 활성화·마이그레이션·상태 UI PR #32 — 설정에서 켜면 owner를
   바인딩해 엔진 활성화) · **#6 알림 진행 중**(1단계 권한+베스트에포트+시각편집 PR #34 · 2a 서버 Web Push
-  구독·발송 파이프라인 PR #35 — 매일 정시 자동발송 크론=2b 후속)
+  구독·발송 파이프라인 PR #35 · 2b 매일 정시 크론 PR #37 — 이걸로 #6 완료 예정)
 - 상시: #8 테스트·접근성·에러 처리·브랜딩

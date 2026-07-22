@@ -60,11 +60,18 @@ export async function subscribePush() {
     if (!sub) {
       sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
     }
+    // tz(IANA)를 함께 보낸다 — 서버 크론이 이 기기의 로컬 remindHour를 계산해 정시 발송한다(#6 2b).
+    let tz = null;
+    try {
+      tz = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+    } catch {
+      tz = null;
+    }
     const res = await fetch('/api/push/subscribe', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(sub.toJSON()),
+      body: JSON.stringify({ ...sub.toJSON(), tz }),
     });
     if (!res.ok) return { ok: false, kind: 'error' };
     return { ok: true };

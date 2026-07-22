@@ -7,14 +7,23 @@
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS push_subs (
-  owner    TEXT    NOT NULL,
-  endpoint TEXT    NOT NULL,
-  keys     TEXT    NOT NULL,   -- JSON { p256dh, auth }
-  ts       INTEGER NOT NULL,   -- 저장 시각(클라이언트 논리 시각). 진단/정리용.
+  owner     TEXT    NOT NULL,
+  endpoint  TEXT    NOT NULL,
+  keys      TEXT    NOT NULL,   -- JSON { p256dh, auth }
+  ts        INTEGER NOT NULL,   -- 저장 시각(클라이언트 논리 시각). 진단/정리용.
+  tz        TEXT,               -- 기기의 IANA 타임존(#6 2b) — 크론이 로컬 remindHour를 계산.
+  last_sent TEXT,               -- 마지막 리마인더 발송 로컬 날짜(YYYY-MM-DD) — 하루 1회 보장.
   PRIMARY KEY (owner, endpoint)
 );
 CREATE INDEX IF NOT EXISTS push_by_owner ON push_subs (owner);
 `;
+
+// tz·last_sent는 2a 이후 추가됐다. 기존 파일 DB의 테이블에는 없을 수 있어 idempotent하게 채운다.
+function migrate(db) {
+  const cols = db.prepare('PRAGMA table_info(push_subs)').all().map((c) => c.name);
+  if (!cols.includes('tz')) db.exec('ALTER TABLE push_subs ADD COLUMN tz TEXT');
+  if (!cols.includes('last_sent')) db.exec('ALTER TABLE push_subs ADD COLUMN last_sent TEXT');
+}
 
 // 발송 시 서버는 endpoint URL로 아웃바운드 요청을 한다(web-push). 임의 endpoint를 저장하면 인증
 // 사용자가 그걸 내부 주소로 지정해 **블라인드 SSRF**를 만들 수 있다(클라 PushManager 검증은 서버를
@@ -50,20 +59,24 @@ export function normalizeSubscription(input) {
 
 export function createPushStore(db) {
   db.exec(SCHEMA);
+  migrate(db);
+  // tz는 갱신하되 last_sent는 보존한다 — 같은 기기 재구독이 그날 발송 여부를 리셋해 이중 발송되지 않게.
   const upsert = db.prepare(`
-    INSERT INTO push_subs (owner, endpoint, keys, ts)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(owner, endpoint) DO UPDATE SET keys = excluded.keys, ts = excluded.ts
+    INSERT INTO push_subs (owner, endpoint, keys, ts, tz)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(owner, endpoint) DO UPDATE SET keys = excluded.keys, ts = excluded.ts, tz = excluded.tz
   `);
   const delByEndpoint = db.prepare('DELETE FROM push_subs WHERE owner = ? AND endpoint = ?');
   // 만료(410 Gone) 정리는 소유자 무관하게 endpoint로 지운다 — 발송 측이 어느 소유자든 죽은 구독을 치운다.
   const delEndpointAny = db.prepare('DELETE FROM push_subs WHERE endpoint = ?');
   const listForOwner = db.prepare('SELECT endpoint, keys FROM push_subs WHERE owner = ?');
+  const listAllStmt = db.prepare('SELECT owner, endpoint, keys, tz, last_sent FROM push_subs');
+  const setLastSentStmt = db.prepare('UPDATE push_subs SET last_sent = ? WHERE owner = ? AND endpoint = ?');
 
   return {
-    // 구독 저장(멱등 upsert). sub은 normalizeSubscription을 통과한 형태여야 한다.
-    add(owner, sub, ts) {
-      upsert.run(owner, sub.endpoint, JSON.stringify(sub.keys), Number.isSafeInteger(ts) && ts >= 0 ? ts : 0);
+    // 구독 저장(멱등 upsert). sub은 normalizeSubscription을 통과한 형태여야 한다. tz는 IANA 문자열.
+    add(owner, sub, ts, tz) {
+      upsert.run(owner, sub.endpoint, JSON.stringify(sub.keys), Number.isSafeInteger(ts) && ts >= 0 ? ts : 0, typeof tz === 'string' ? tz : null);
     },
     // 이 소유자의 특정 기기 구독 해제.
     remove(owner, endpoint) {
@@ -76,6 +89,14 @@ export function createPushStore(db) {
     // 소유자의 모든 구독(발송 대상). keys는 JSON을 파싱해 돌려준다.
     listByOwner(owner) {
       return listForOwner.all(owner).map((r) => ({ endpoint: r.endpoint, keys: JSON.parse(r.keys) }));
+    },
+    // 전체 구독(크론이 소유자별로 훑는다). owner·endpoint·keys·tz·last_sent 포함.
+    listAll() {
+      return listAllStmt.all().map((r) => ({ owner: r.owner, endpoint: r.endpoint, keys: JSON.parse(r.keys), tz: r.tz, lastSent: r.last_sent }));
+    },
+    // 리마인더 발송 후 그 기기의 마지막 발송 로컬 날짜를 기록(하루 1회 dedup).
+    setLastSent(owner, endpoint, dateKey) {
+      setLastSentStmt.run(dateKey, owner, endpoint);
     },
     // 소유자 키 이관(재키잉) — cells/docs만 옮기는 store.rekeyOwner가 이 별도 테이블은 못 건드리므로
     // rekey.js가 함께 호출한다. 안 하면 재키잉 후 새 owner의 구독이 비어 푸시를 못 받는다. endpoint는
