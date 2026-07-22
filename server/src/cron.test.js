@@ -78,6 +78,15 @@ describe('reminder cron tick', () => {
     expect(await cron().tick()).toBe(0);
   });
 
+  it('tz 미상 구독(2a 이전)은 스킵한다 — UTC로 잘못 보내지 않게', async () => {
+    // 새 기기: tz 없이 저장(마이그레이션 NULL 재현). UTC 12:00(서울 21:00)이어도 안 보낸다.
+    pushStore.add(ME, { endpoint: FCM(2), keys: KEYS }, 1, null);
+    // 기존 서울 구독은 보내지므로, tz 없는 것만 빠지는지 보려면 서울 구독을 제거하고 tz-null만 남긴다.
+    pushStore.remove(ME, FCM(1));
+    expect(await cron().tick()).toBe(0);
+    expect(sends).toHaveLength(0);
+  });
+
   it('발송기가 없으면 no-op', async () => {
     const c = createReminderCron({ store, pushStore, pushSender: null, nowFn: () => AT_2100_SEOUL });
     expect(await c.tick()).toBe(0);

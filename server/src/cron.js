@@ -28,6 +28,9 @@ export function createReminderCron({ store, pushStore, pushSender, nowFn }) {
     const incompleteCache = new Map(); // `${owner}\t${dateKey}` -> number
     let sent = 0;
     for (const sub of subs) {
+      // tz 미상(2a 이전 구독은 마이그레이션으로 NULL)은 스킵한다 — UTC로 추측하면 서울 사용자가
+      // 21:00이 아니라 06:00에 받는다. 기기가 다음에 앱을 열면 refreshTimezone이 tz를 채워 정상화된다(#37 Codex P2).
+      if (!sub.tz) continue;
       const { dateKey, hour, minute } = localDateParts(nowMs, sub.tz);
       let s = settingsCache.get(sub.owner);
       if (!s) {
