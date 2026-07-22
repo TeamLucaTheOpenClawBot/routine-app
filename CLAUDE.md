@@ -161,6 +161,8 @@
 
 - **알림**(#6 · 1단계 PR #34): 설정 토글 ON 시 `Notification.requestPermission()`으로 권한을 받고
   (`notifPerm`), granted면 **앱이 열려 있는 동안** 다음 `remindHour`:00에 알림을 띄운다(미완료가 있을 때만).
+  **실제 켜짐은 `notif && notifPerm==='granted'`**(`remindersOn`)로 판정한다 — notif 기본값이 true여도
+  권한이 없으면 토글을 꺼짐으로 보여, "켜짐인데 안 뜨는" 모순과 두 번 눌러야 권한 요청되는 문제를 없앤다.
   예약 시각은 순수 함수 `nextReminderAt(now, remindHour)`(자정 넘김·정각 중복발화 방지, 테스트 대상)로
   구하고, App이 `setTimeout`으로 예약→발화→다음날 재예약한다. 미완료 수는 ref로 읽어(타이머 재설정 없이)
   체크할 때마다 재예약되지 않게 한다. 알림은 SW `registration.showNotification`(설치 PWA), 없으면

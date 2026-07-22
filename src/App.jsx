@@ -466,8 +466,13 @@ function App() {
   const remindInfoRef = useRef(0);
   remindInfoRef.current = todayLeft; // 알림 시점의 미완료 수를 최신으로 유지(타이머 재설정 없이).
 
+  // **실제 켜짐** = 사용자 선호(notif) + 브라우저 권한(granted). notif 기본값이 true여도 권한이
+  // default/denied면 알림이 안 뜨므로, 토글 표시·분기·시각편집을 이 파생값에 맞춘다 — 미허용 상태에서
+  // 토글이 "켜짐"으로 보이는데 아무 일도 안 하는 모순을 없앤다(#34 Codex P2). 한 번 누르면 권한 요청.
+  const remindersOn = notif && notifPerm === 'granted';
+
   const toggleNotif = async () => {
-    if (notif) {
+    if (remindersOn) {
       setNotif(false);
       return;
     }
@@ -683,7 +688,7 @@ function App() {
               onEdit={openEditForm}
               onToggleVisible={toggleVisible}
               onAdd={openAddForm}
-              notif={notif}
+              notif={remindersOn}
               remindHour={remindHour}
               notifPerm={notifPerm}
               onToggleNotif={toggleNotif}
