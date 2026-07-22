@@ -62,7 +62,7 @@ src/
   App.test.jsx     App 구동 · 영속화 통합 테스트
   index.css        다크 테마 디자인 토큰 · 전역 스타일
   main.jsx         엔트리
-server/            동기화 API — 의존성 0개 Node(내장 모듈만), Cloudflare Access JWT 검증
+server/            동기화·푸시 API — native 의존성 0(순수 JS web-push 하나), Cloudflare Access JWT 검증
   src/index.js     HTTP 핸들러(POST /api/sync · GET /api/me · 헬스체크)
   src/store.js     SQLite(node:sqlite) 셀 단위 merge 저장소(+ store.test.js)
   src/access.js    Access JWT 검증(RS256 고정 · aud/iss)(+ access.test.js)
