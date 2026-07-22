@@ -192,3 +192,17 @@ describe('App 기타찬스 UI (#16)', () => {
     expect(screen.queryByLabelText('기타찬스 삭제 — 장염')).not.toBeInTheDocument();
   });
 });
+
+describe('클라우드 동기화 UI (#7 4/4)', () => {
+  it('미연결 상태에서 설정에 동기화 섹션과 두 시작 옵션을 보여준다', () => {
+    render(<App />);
+    fireEvent.click(screen.getByText('설정'));
+    expect(screen.getByText('클라우드 동기화')).toBeInTheDocument();
+    expect(screen.getByText('연결 안 됨')).toBeInTheDocument();
+    // 최초 시작 방식 두 가지 — 이 기기 데이터로 / 클라우드 데이터로
+    expect(screen.getByText('이 기기 데이터로 시작 (클라우드에 올림)')).toBeInTheDocument();
+    expect(screen.getByText('클라우드 데이터로 시작 (이 기기 기록 대체)')).toBeInTheDocument();
+    // 미연결이므로 연결 해제 버튼은 없다
+    expect(screen.queryByText('연결 해제')).not.toBeInTheDocument();
+  });
+});
