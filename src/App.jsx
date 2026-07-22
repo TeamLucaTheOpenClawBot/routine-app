@@ -103,6 +103,48 @@ function Icon({ name, size = 20, color = '#0EA5A4', strokeWidth = 2 }) {
   );
 }
 
+// 모달 접근성(#8): 열리면 포커스를 다이얼로그로 옮기고, Esc로 닫고, Tab을 안에 가두고(포커스 트랩),
+// 닫힐 때 트리거로 포커스를 되돌린다. onClose는 ref로 최신값을 잡아 effect는 마운트에 1회만 돈다
+// (매 렌더 재실행 시 포커스를 계속 뺏기는 것을 막는다).
+function useDialogA11y(onClose) {
+  const ref = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const node = ref.current;
+    const prevFocus = typeof document !== 'undefined' ? document.activeElement : null;
+    const focusables = () =>
+      node ? node.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') : [];
+    (focusables()[0] || node)?.focus?.();
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (e.key === 'Tab' && node) {
+        const f = focusables();
+        if (!f.length) return;
+        const first = f[0];
+        const last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      if (prevFocus && prevFocus.focus) prevFocus.focus();
+    };
+  }, []);
+  return ref;
+}
+
 function App() {
   // 새로고침 시 복원. 저장 데이터가 없으면(첫 방문) 기본 루틴(운동·음주)으로 시작.
   const [persisted] = useState(loadState);
@@ -1210,17 +1252,18 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
 
 function CheckSheet({ dayKey, routines, checks, onToggle, onClose }) {
   const d = parseDateKey(dayKey);
+  const ref = useDialogA11y(onClose);
   return (
     <>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(15, 23, 42, 0.34)', zIndex: 25 }} />
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: 'var(--color-surface)', borderTopLeftRadius: 26, borderTopRightRadius: 26, boxShadow: 'var(--shadow-lg)', zIndex: 30, padding: '10px calc(18px + env(safe-area-inset-right)) calc(22px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left))', display: 'flex', flexDirection: 'column', maxHeight: '84%' }}>
+      <div onClick={onClose} aria-hidden style={{ position: 'absolute', inset: 0, background: 'rgba(15, 23, 42, 0.34)', zIndex: 25 }} />
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={`${d.getMonth() + 1}월 ${d.getDate()}일 체크`} tabIndex={-1} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, background: 'var(--color-surface)', borderTopLeftRadius: 26, borderTopRightRadius: 26, boxShadow: 'var(--shadow-lg)', zIndex: 30, padding: '10px calc(18px + env(safe-area-inset-right)) calc(22px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left))', display: 'flex', flexDirection: 'column', maxHeight: '84%', outline: 'none' }}>
         <div style={{ width: 40, height: 4, borderRadius: 999, background: 'var(--color-border)', margin: '2px auto 12px' }} />
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
           <div>
             <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.01em' }}>{d.getMonth() + 1}월 {d.getDate()}일</div>
             <div style={{ fontSize: 12.5, color: 'var(--color-muted)', marginTop: 2, fontWeight: 600 }}>{WEEKDAYS[d.getDay()]}요일</div>
           </div>
-          <button type="button" onClick={onClose} style={{ cursor: 'pointer', width: 32, height: 32, borderRadius: '50%', background: 'var(--color-bg)', color: 'var(--color-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700 }}>✕</button>
+          <button type="button" onClick={onClose} aria-label="닫기" style={{ cursor: 'pointer', width: 32, height: 32, borderRadius: '50%', background: 'var(--color-bg)', color: 'var(--color-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700 }}>✕</button>
         </div>
         <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {routines.map((routine) => {
@@ -1309,9 +1352,10 @@ function RoutineForm({ routine, mode, canDelete, onCancel, onSave, onUpdate, onS
   const stepBase = { width: 40, height: 40, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', fontSize: 22, fontWeight: 800 };
   const stepStyle = (enabled) => ({ ...stepBase, color: enabled ? 'var(--color-text)' : 'var(--color-field-border)', cursor: enabled ? 'pointer' : 'default' });
   const label = { fontSize: 12.5, fontWeight: 800, color: 'var(--color-muted)', letterSpacing: '0.03em', marginBottom: 10 };
+  const dialogRef = useDialogA11y(onCancel);
   // inset:0 오버레이는 셸의 safe-area padding을 벗어나므로(padding-box 기준) 자체 인셋을 둔다. 하단은 스크롤 본문 padding이 처리.
   return (
-    <div style={{ position: 'absolute', inset: 0, background: 'var(--color-surface)', zIndex: 40, display: 'flex', flexDirection: 'column', paddingTop: 'env(safe-area-inset-top)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={mode === 'add' ? '루틴 추가' : '루틴 편집'} tabIndex={-1} style={{ position: 'absolute', inset: 0, background: 'var(--color-surface)', zIndex: 40, display: 'flex', flexDirection: 'column', paddingTop: 'env(safe-area-inset-top)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)', outline: 'none' }}>
       <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px 12px', borderBottom: '1px solid var(--color-border)' }}>
         <button type="button" onClick={onCancel} style={{ cursor: 'pointer', fontSize: 15, fontWeight: 700, color: 'var(--color-muted)' }}>취소</button>
         <div style={{ fontSize: 16.5, fontWeight: 800 }}>{mode === 'add' ? '루틴 추가' : '루틴 편집'}</div>

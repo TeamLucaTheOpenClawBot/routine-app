@@ -233,3 +233,15 @@ describe('알림 설정 UI (#6)', () => {
     expect(screen.queryByLabelText('알림 시각')).not.toBeInTheDocument();
   });
 });
+
+describe('모달 접근성 (#8)', () => {
+  it('루틴 편집 폼이 role="dialog"로 열리고 Esc로 닫힌다', () => {
+    render(<App />);
+    fireEvent.click(screen.getByText('설정'));
+    fireEvent.click(screen.getByText('운동')); // 설정 루틴 행 → 편집 폼
+    const dialog = screen.getByRole('dialog', { name: '루틴 편집' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: '루틴 편집' })).not.toBeInTheDocument();
+  });
+});
