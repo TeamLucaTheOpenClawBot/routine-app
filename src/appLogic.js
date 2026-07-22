@@ -39,6 +39,14 @@ export function startOfToday() {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
+// 다음 리마인더 시각(로컬 ms) — now가 오늘 remindHour:00 전이면 오늘 그 시각, 아니면 내일 그 시각.
+// best-effort 데일리 알림 예약용 순수 함수(#6). now는 주입해 테스트를 결정적으로 한다.
+export function nextReminderAt(now, remindHour) {
+  const t = new Date(now.getFullYear(), now.getMonth(), now.getDate(), remindHour, 0, 0, 0);
+  if (t.getTime() <= now.getTime()) t.setDate(t.getDate() + 1);
+  return t.getTime();
+}
+
 // 캘린더/통계가 다루는 주 범위의 시작(오늘 기준 과거 WEEKS_BACK주 전의 주 시작).
 export function rangeStart(today, weekStart = 0) {
   return startOfWeek(addDays(today, -WEEKS_BACK * 7), weekStart);

@@ -206,3 +206,19 @@ describe('클라우드 동기화 UI (#7 4/4)', () => {
     expect(screen.queryByText('연결 해제')).not.toBeInTheDocument();
   });
 });
+
+describe('알림 설정 UI (#6 1단계)', () => {
+  it('설정에서 리마인더 토글·알림 시각 선택·best-effort 안내를 보여준다', () => {
+    render(<App />);
+    fireEvent.click(screen.getByText('설정'));
+    expect(screen.getByText('매일 리마인더')).toBeInTheDocument();
+    // 기본 notif=true라 알림 시각 셀렉트가 보인다
+    const sel = screen.getByLabelText('알림 시각');
+    expect(sel).toBeInTheDocument();
+    // 시각 변경 → 라벨 반영(21 → 8)
+    fireEvent.change(sel, { target: { value: '8' } });
+    expect(screen.getByText(/08:00 · 앱이 열려 있을 때 알림/)).toBeInTheDocument();
+    // 폰 잠금 알림은 준비 중이라는 한계 안내
+    expect(screen.getByText(/폰이 잠겨 있어도 오는 정시 알림은 준비 중/)).toBeInTheDocument();
+  });
+});
