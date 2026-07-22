@@ -76,7 +76,10 @@ export async function subscribePush() {
 // 서버 등록 해제 + 브라우저 구독 취소. **서버에서 행이 지워진 게 확인된 뒤에만** 브라우저 구독을
 // 폐기한다 — 서버 요청이 실패(네트워크/401/500)했는데 구독을 먼저 취소하면 재시도 handle(endpoint)이
 // 사라져 서버 행이 다음 발송의 410 전까지 남는다(#35 Codex P2). 실패 시 { ok:false }로 구독을 남긴다.
-export async function unsubscribePush() {
+// force=false(기본): 서버 삭제 확인 뒤에만 브라우저 구독을 폐기(실패 시 유지 → 재시도 가능).
+// force=true: 동기화 연결 해제처럼 정리 UI가 곧 사라지는 tear-down에선 서버 실패에도 브라우저 구독을
+// 폐기한다 — endpoint가 무효가 돼 다음 서버 발송이 410으로 실패하면 서버가 그 행을 자가 정리한다.
+export async function unsubscribePush({ force = false } = {}) {
   const sub = await currentSubscription();
   if (!sub) return { ok: true };
   let serverOk = false;
@@ -91,13 +94,14 @@ export async function unsubscribePush() {
   } catch {
     serverOk = false;
   }
-  if (!serverOk) return { ok: false }; // 브라우저 구독 유지 → 재시도 가능
-  try {
-    await sub.unsubscribe();
-  } catch {
-    /* noop */
+  if (serverOk || force) {
+    try {
+      await sub.unsubscribe();
+    } catch {
+      /* noop */
+    }
   }
-  return { ok: true };
+  return { ok: serverOk };
 }
 
 // 테스트 발송(서버가 이 소유자의 구독에 실제 푸시). 결과 { ok, sent } 또는 { ok:false }.

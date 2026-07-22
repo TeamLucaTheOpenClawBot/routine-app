@@ -349,7 +349,9 @@ function App() {
     // 이 기기의 서버 푸시 구독도 함께 정리한다 — 안 하면 연결 해제 후에도 서버 행·브라우저 구독이
     // 남아 다른 기기 발송이 계속 이 기기에 오고, 연결이 끊긴 뒤엔 UI로 해제할 방법도 없다(#35 Codex P2).
     // 지금은 아직 인증 세션이 살아 있어(owner는 클라 상태) unsubscribe 요청이 서버에서 처리된다.
-    unsubscribePush();
+    // force=true: 연결 해제 후엔 정리 UI가 사라지므로, 서버 요청이 실패해도 브라우저 구독을 폐기해
+    // 다음 서버 발송의 410으로 서버 행이 자가 정리되게 한다(대기 상태로 남지 않게).
+    unsubscribePush({ force: true });
     setPushOn(false);
     setPushMsg(null);
     setBound(false);
@@ -404,9 +406,14 @@ function App() {
     if (pushBusy) return;
     setPushBusy(true);
     try {
-      await unsubscribePush();
-      setPushOn(false);
-      setPushMsg(null);
+      const r = await unsubscribePush();
+      if (r.ok) {
+        setPushOn(false);
+        setPushMsg(null);
+      } else {
+        // 서버 삭제 실패 — 구독은 남아 있으니 등록 상태를 유지하고 재시도를 안내한다(#35 Codex P2).
+        setPushMsg('해제에 실패했어요. 잠시 후 다시 시도해 주세요.');
+      }
     } finally {
       setPushBusy(false);
     }

@@ -159,9 +159,11 @@ const server = createServer(async (req, res) => {
     const owner = auth.sub;
     if (!owner) return json(res, 401, { error: 'unauthorized', reason: 'no_subject' });
 
-    // 클라이언트가 구독에 쓸 VAPID 공개키. 키가 없으면 null → 클라이언트는 구독을 시도하지 않는다.
+    // 클라이언트가 구독에 쓸 VAPID 공개키. **발송기가 완전 구성됐을 때만** 노출한다 — 공개키만 있고
+    // private/subject가 없으면 sender가 null이라 발송이 불가한데 키를 주면 클라가 구독은 성공하고
+    // 발송은 늘 503이 된다(#35 Codex P2). sender 없으면 null을 줘 구독 자체를 막는다.
     if (req.method === 'GET' && url.pathname === '/api/push/key') {
-      return json(res, 200, { publicKey: VAPID_PUBLIC || null });
+      return json(res, 200, { publicKey: pushSender ? VAPID_PUBLIC : null });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/push/subscribe') {
