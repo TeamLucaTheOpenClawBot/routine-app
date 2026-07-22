@@ -94,8 +94,9 @@
   `github.ref == 'refs/heads/main'` 게이팅이라 외부 PR로는 배포 경로에 도달할 수 없다.
   주의: 앞으로 커밋에 서버 IP·키를 넣으면 즉시 공개된다(현재 히스토리는 클린).
 
-- **백엔드/동기화**(#7 완료 · PR #27·#28·#30·#32): 단독 사용자 전제. `server/`가 **의존성 0개** Node API다
-  (내장 모듈만 — native 모듈을 쓰면 `node_modules`가 타깃 아키텍처로 빌드돼야 해서 arm64 이미지에서
+- **백엔드/동기화**(#7 완료 · PR #27·#28·#30·#32): 단독 사용자 전제. `server/`는 **native 의존성 0** Node API다
+  (#6 2a로 순수 JS dep `web-push` 하나만 추가됨 — 핵심은 개수가 아니라 **native 금지**다: native 모듈을 쓰면
+  `node_modules`가 타깃 아키텍처로 빌드돼야 해서 arm64 이미지에서
   QEMU `npm install`이 되살아난다. 프론트의 `BUILDPLATFORM` 트릭은 native엔 안 통한다).
   **인증은 직접 구현하지 않는다** — Cloudflare Access가 `routine.chillingdaisy.org/api` 경로에
   붙고, API는 엣지가 넣는 JWT만 검증한다(`server/src/access.js`, alg를 RS256으로 고정해 alg 혼동
