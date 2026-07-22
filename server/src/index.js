@@ -184,6 +184,12 @@ const server = createServer(async (req, res) => {
 
     if (req.method === 'POST' && url.pathname === '/api/push/unsubscribe') {
       const body = await readJsonBody(req);
+      if (body.error === 'too_large') {
+        // subscribe·sync와 동일하게 413을 보낸 뒤 끊는다 — 안 그러면 paused 요청이 keep-alive
+        // 연결을 서버 타임아웃까지 물고 있어, 과대 요청 반복으로 연결을 소진시킬 수 있다.
+        res.on('finish', () => req.destroy());
+        return json(res, 413, { error: 'too_large', limit: MAX_BODY });
+      }
       if (body.error) return json(res, 400, { error: body.error });
       const endpoint = body.value && typeof body.value === 'object' ? body.value.endpoint : null;
       if (typeof endpoint !== 'string' || !endpoint) return json(res, 400, { error: 'invalid_endpoint' });
