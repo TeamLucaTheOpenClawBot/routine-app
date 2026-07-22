@@ -195,6 +195,9 @@
   타이밍은 구독 단위로 계산한다. `last_sent`(로컬 날짜)로 **하루 1회** 보장(같은 날 재틱은 skip). 미완료는
   `store.getDoc('routines')` + `store.checkedRoutineIds(owner, dateKey)`(non-null 셀)로 서버가 직접 센다.
   발송기(VAPID) 없으면 tick은 no-op. `push_subs`에 `tz`·`last_sent` 컬럼 추가(기존 DB는 idempotent ALTER 마이그레이션).
+  틱은 **직렬화**한다(in-flight 가드 — 느린 발송이 다음 분 틱과 겹쳐 이중 발송되는 것 방지) 하고, **start()가
+  기동 즉시 1회** 돈다(인터벌 첫 틱을 기다리다 그 시간대를 놓치지 않게). tz는 subscribe 때만 잡히므로,
+  구독이 있으면 **앱 시작 시 `refreshTimezone`으로 최신 tz를 재등록**한다(기기 이동/시스템 tz 변경 반영).
 
 ## 로드맵 단계 메모
 

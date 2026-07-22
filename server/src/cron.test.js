@@ -76,4 +76,12 @@ describe('reminder cron tick', () => {
     const c = createReminderCron({ store, pushStore, pushSender: null, nowFn: () => AT_2100_SEOUL });
     expect(await c.tick()).toBe(0);
   });
+
+  it('start()는 기동 즉시 한 틱을 돌린다(인터벌 첫 틱을 기다리지 않음)', async () => {
+    const c = cron();
+    c.start(9_999_999); // 인터벌은 사실상 안 돌게 크게
+    await new Promise((r) => setTimeout(r, 20)); // 즉시 틱의 async 완료 대기
+    c.stop();
+    expect(sends).toHaveLength(1);
+  });
 });

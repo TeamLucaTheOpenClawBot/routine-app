@@ -7,10 +7,22 @@ export function createReminderCron({ store, pushStore, pushSender, nowFn }) {
   const now = nowFn ?? (() => Date.now());
 
   // 한 틱: 모든 구독 판정·발송. 테스트에서 직접 호출 가능. 보낸 기기 수를 돌려준다.
+  // **직렬화**: 느린 발송이 다음 분 틱과 겹치면 둘 다 미설정 last_sent를 읽어 이중 발송된다(#37 Codex P2).
+  // 진행 중이면 이번 호출을 건너뛴다(발송 후 last_sent가 기록돼야 다음 틱이 스킵한다).
+  let running = false;
   async function tick() {
-    if (!pushSender) return 0;
+    if (running || !pushSender) return 0;
     const subs = pushStore.listAll();
     if (!subs.length) return 0;
+    running = true;
+    try {
+      return await tickInner(subs);
+    } finally {
+      running = false;
+    }
+  }
+
+  async function tickInner(subs) {
     const nowMs = now();
     const settingsCache = new Map(); // owner -> { notif, remindHour, routines }
     const incompleteCache = new Map(); // `${owner}\t${dateKey}` -> number
@@ -48,9 +60,9 @@ export function createReminderCron({ store, pushStore, pushSender, nowFn }) {
     tick,
     start(intervalMs = 60000) {
       if (timer) return;
-      timer = setInterval(() => {
-        tick().catch((err) => console.error('리마인더 tick 실패:', err));
-      }, intervalMs);
+      const run = () => tick().catch((err) => console.error('리마인더 tick 실패:', err));
+      run(); // 기동 즉시 1회 — 인터벌 첫 틱(최대 intervalMs 뒤)을 기다리다 그 시간대를 놓치지 않게(#37 Codex P2).
+      timer = setInterval(run, intervalMs);
       if (timer.unref) timer.unref(); // 크론이 프로세스 종료를 막지 않게.
     },
     stop() {
