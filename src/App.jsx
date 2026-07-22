@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PALETTE,
   ICON_KEYS,
@@ -29,7 +29,15 @@ import {
   loadState,
   saveState,
   clearState,
+  emptySync,
+  loadSync,
+  saveSync,
+  enqueueLocalChanges,
+  syncRequest,
+  applySyncResponse,
+  nextTs,
 } from './appLogic';
+import { postSync } from './syncClient';
 
 // 단색 라인 아이콘(24×24, stroke). 루틴용 + UI용.
 const ICONS = {
@@ -105,7 +113,7 @@ function App() {
   const [form, setForm] = useState(null); // { mode: 'add'|'edit', id }
   const [notice, setNotice] = useState(null); // 찬스 소진 등 일시 안내
   const [notif, setNotif] = useState(() => persisted?.notif ?? true);
-  const [remindHour] = useState(() => persisted?.remindHour ?? 21);
+  const [remindHour, setRemindHour] = useState(() => persisted?.remindHour ?? 21);
   const [weekStart, setWeekStart] = useState(() => persisted?.weekStart ?? 0);
   const scrollRef = useRef(null);
 
@@ -113,6 +121,135 @@ function App() {
   useEffect(() => {
     saveState({ routines, checks, bonusChances, weekStart, notif, remindHour });
   }, [routines, checks, bonusChances, weekStart, notif, remindHour]);
+
+  // ── 클라우드 동기화 (#7 3/4) ─────────────────────────────────────────────
+  // outbox·커서는 유저 데이터와 별도 키(SYNC_KEY)에 둔다. 자주 바뀌고 렌더에 영향이 없어
+  // React state가 아니라 ref로 들고 다닌다. baseline = '지금까지 반영된' 상태 스냅샷 —
+  // 다음 렌더의 상태와 비교해 변경분만 outbox에 쌓는다(편집 지점마다 코드를 흩뿌리지 않기 위함).
+  const syncRef = useRef(null);
+  if (syncRef.current === null) syncRef.current = loadSync();
+  const baselineRef = useRef({ routines, checks, bonusChances, weekStart, notif, remindHour });
+  const syncingRef = useRef(false);
+  const pushTimerRef = useRef(null);
+  const syncGenRef = useRef(0); // 세대 번호. 데이터 초기화가 세대를 올려 비행 중 응답 적용을 무효화한다.
+  const syncPendingRef = useRef(false); // 요청 중 트리거가 막혔음을 기록 — 끝나면 재실행한다.
+  const syncHaltedRef = useRef(false); // 세션 신원이 outbox 소유자와 다르면(계정 바뀜) 이 세션 동기화 중단.
+
+  // 단조 증가 논리 시각을 발급한다. 기기 시계가 뒤로 가도 새 편집의 ts가 서버 저장값보다 낮아
+  // LWW에서 조용히 지는 걸 막는다(#30 Codex P2). lastTs는 sync 상태에 실려 영속·pull로 갱신된다.
+  const issueTs = () => {
+    const ts = nextTs(syncRef.current.lastTs, Date.now());
+    syncRef.current = { ...syncRef.current, lastTs: ts };
+    return ts;
+  };
+  // 최신 **커밋된** 상태를 렌더마다 동기적으로 담아둔다. runSync는 async라, await를 건너 돌아온
+  // 사이에 사용자가 편집하면 baseline은 아직 편집 전(패시브 effect가 안 돌았을 수 있다) — 그때
+  // liveState로 비행 중 편집을 응답 적용 전에 반영해 덮어쓰기를 막는다(#30 Codex P1).
+  const liveStateRef = useRef(null);
+  liveStateRef.current = { routines, checks, bonusChances, weekStart, notif, remindHour };
+
+  const runSync = useCallback(async () => {
+    // 이미 왕복 중이면 이번 트리거를 버리지 않고 pending으로 기록한다 — 요청이 디바운스보다
+    // 오래 걸려 그 사이 편집이 outbox에 쌓이면, 끝난 뒤 재실행해야 다음 인터벌(30s)까지 밀리지 않는다.
+    if (syncingRef.current) {
+      syncPendingRef.current = true;
+      return;
+    }
+    // 계정이 바뀐 세션에선(아래 409로 감지) 이 세션 동안 동기화를 완전히 멈춘다 — push·pull·merge를
+    // 하지 않아 A의 로컬 데이터가 B 계정에 섞일 경로 자체를 없앤다. 계정 전환은 리로드 후 #7 4/4.
+    if (syncHaltedRef.current) return;
+    // 3/4는 **이미 바인딩된 소유자만** 동기화한다. owner=null이면 미바인딩 로컬 데이터인데, 이걸
+    // 자동으로 밀면 그게 지금 세션 것인지 확인할 방법이 없어(계정 무관 단일 저장) 남의 계정에 섞일 수
+    // 있다 — "마운트 전 데이터 없음"조차 지금 세션이 이 편집을 만든 세션임을 보장하지 못한다(생성 직후
+    // 다른 탭에서 세션이 바뀔 수 있다). 첫 push엔 넣을 owner가 없어 서버 409 가드도 못 건다. 따라서
+    // 최초 로컬→클라우드 **바인딩·마이그레이션은 통째로 #7 4/4**(getMe로 신원 확정 후 업로드/새로
+    // 시작을 사용자가 선택)로 넘긴다. halt 플래그가 아니라 매번 검사만 해, 4/4가 owner를 붙이면 재개된다.
+    if (!syncRef.current.owner) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    syncingRef.current = true;
+    const gen = syncGenRef.current; // 이 왕복이 시작된 세대. 도중에 초기화되면 응답을 버린다.
+    try {
+      // 신원 확인과 push를 **한 요청**으로 원자화한다. syncRequest가 outbox 소유자를 expectedOwner로
+      // 실어 보내고, 서버는 세션 소유자와 다르면 쓰기 전에 409로 거부한다 — getMe와 push를 나누면 그
+      // 사이 (다른 탭 재인증 등으로) 세션이 바뀔 때 남의 계정에 쓰는 TOCTOU가 남기 때문이다. 최초
+      // 동기화(owner 미확정)엔 expectedOwner가 없어 서버가 쓰고 응답의 owner로 소유자가 확정된다.
+      const sent = syncRequest(syncRef.current);
+      const res = await postSync(sent);
+      if (res.kind === 'conflict') {
+        // 세션 신원이 outbox 소유자와 다르다(서버가 쓰기 전에 거부). 3/4는 계정 전환을 처리하지
+        // 않으므로 **아무것도 건드리지 않고** 이 세션 동기화를 멈춘다 — outbox·커서·화면 상태·
+        // baseline 모두 그대로 둔다. 여기서 outbox만 비우면 화면에 남은 A 데이터가 다음 편집 때
+        // 그 소유자로 push돼 B 계정에 섞인다(#30 Codex P1). 로컬(A) 데이터는 보존되고, 세션이
+        // 원래 계정으로 돌아온 뒤 리로드하면 재개된다. 계정 전환 로컬 격리는 #7 4/4.
+        syncHaltedRef.current = true;
+        return;
+      }
+      if (!res.ok) return; // auth(재인증)·offline·server 구분과 안내는 4/4(동기화 상태 UI)에서.
+      // 대기 중 데이터 초기화가 있었으면 이 응답은 **초기화 전 커서**로 받은 것이라, 병합하면
+      // 방금 지운 routines/checks가 되살아난다 → 세대가 바뀌었으면 통째로 버린다.
+      if (syncGenRef.current !== gen) return;
+      // 응답 적용 전에, 비행 중 들어온 로컬 편집을 먼저 outbox에 반영한다. 이 편집은 패시브 적재
+      // effect가 아직 안 돌아 baseline·outbox에 없을 수 있는데, 그대로 두면 아래 setState가 merged로
+      // 덮어써 편집이 UI·outbox 양쪽에서 사라진다. 여기서 latest 커밋 상태(liveState)를 기준으로
+      // 반영해 두면 아래 병합이 그 편집을 pending으로 인식해 지키고, 다음 왕복에 밀린다.
+      const live = liveStateRef.current ?? baselineRef.current;
+      syncRef.current = enqueueLocalChanges(syncRef.current, baselineRef.current, live, issueTs());
+      // prune·pull은 **현재** outbox + latest 상태 기준으로 한다 — 보낸 뒤 들어온 편집을 잃지 않게.
+      const { state: merged, sync: nextSync } = applySyncResponse(live, syncRef.current, res.data, sent);
+      // 아래 setState가 유발할 적재 effect가 pull분을 로컬 편집으로 오인해 재적재하지 않도록 baseline을 먼저 올린다.
+      baselineRef.current = merged;
+      syncRef.current = nextSync;
+      saveSync(nextSync);
+      setRoutines(merged.routines);
+      setChecks(merged.checks);
+      setBonusChances(merged.bonusChances);
+      setWeekStart(merged.weekStart);
+      setNotif(merged.notif);
+      setRemindHour(merged.remindHour);
+    } finally {
+      syncingRef.current = false;
+      // 요청 중 트리거가 막혔으면(그 사이 편집이 쌓였을 수 있다) 곧 재실행한다. 재귀 대신 예약해
+      // 스택·락 문제를 피하고, 플래그를 먼저 내려 무한 루프를 막는다.
+      if (syncPendingRef.current) {
+        syncPendingRef.current = false;
+        clearTimeout(pushTimerRef.current);
+        pushTimerRef.current = setTimeout(() => runSync(), 0);
+      }
+    }
+  }, []);
+
+  // 로컬 변경 → outbox 적재(한 곳에서). pull로 인한 변경은 baseline이 함께 올라가 걸러진다.
+  useEffect(() => {
+    const current = { routines, checks, bonusChances, weekStart, notif, remindHour };
+    const next = enqueueLocalChanges(syncRef.current, baselineRef.current, current, issueTs());
+    baselineRef.current = current;
+    if (next === syncRef.current) return undefined; // 변경 없음(동일 참조)
+    syncRef.current = next;
+    saveSync(next);
+    // 여러 편집을 한 왕복으로 묶어 곧 민다(디바운스).
+    clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(() => runSync(), 1200);
+    return undefined;
+  }, [routines, checks, bonusChances, weekStart, notif, remindHour, runSync]);
+
+  // 온라인 복귀·포커스·가시성 복귀·주기적으로 동기화. 마운트 시에도 1회.
+  useEffect(() => {
+    runSync();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') runSync();
+    };
+    const id = setInterval(() => runSync(), 30000);
+    window.addEventListener('online', runSync);
+    window.addEventListener('focus', runSync);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      clearTimeout(pushTimerRef.current); // 디바운스·재실행 예약 타이머도 정리(언마운트 후 실행 방지).
+      window.removeEventListener('online', runSync);
+      window.removeEventListener('focus', runSync);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [runSync]);
 
   // 안내는 잠깐만 띄우고 자동으로 사라진다. 새 안내가 오면 타이머도 새로 잡힌다.
   useEffect(() => {
@@ -356,9 +493,20 @@ function App() {
     setBonusChances({});
     setWeekStart(0);
     setNotif(true);
+    setRemindHour(21);
     setForm(null);
     setSheetDay(null);
     setActiveTab('today');
+    // 로컬 초기화는 outbox만 비우고 **커서는 지킨다**. 커서를 0으로 되돌리면 다음 동기화가
+    // 서버에 남은 옛 기록을 seq>0으로 전부 다시 당겨와 초기화가 되돌려진다. 커서를 유지하면
+    // 우리 옛 행은 seq<=커서라 다시 오지 않고, 다른 기기의 새 변경만 흘러온다.
+    // baseline도 기본값으로 맞춰 이 초기화가 삭제 변경으로 outbox에 쌓이지 않게 한다
+    // (서버는 옛 데이터를 그대로 보관 — 교차 기기 초기화 의미론은 #7 4/4).
+    baselineRef.current = { routines: defaultRoutines(), checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 };
+    syncRef.current = { ...emptySync(), cursor: syncRef.current.cursor, owner: syncRef.current.owner, lastTs: syncRef.current.lastTs };
+    saveSync(syncRef.current);
+    // 대기 중인 sync 응답이 초기화 전 커서로 받은 데이터를 되살리지 않도록 세대를 올린다.
+    syncGenRef.current += 1;
   };
 
   // 데스크톱에선 480px 컬럼을 중앙 정렬, 모바일에선 뷰포트를 꽉 채운다(목업 프레임·가짜 상태바 제거).
