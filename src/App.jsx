@@ -346,6 +346,12 @@ function App() {
     syncRef.current = { ...emptySync(), lastTs: syncRef.current.lastTs };
     saveSync(syncRef.current);
     syncHaltedRef.current = false;
+    // 이 기기의 서버 푸시 구독도 함께 정리한다 — 안 하면 연결 해제 후에도 서버 행·브라우저 구독이
+    // 남아 다른 기기 발송이 계속 이 기기에 오고, 연결이 끊긴 뒤엔 UI로 해제할 방법도 없다(#35 Codex P2).
+    // 지금은 아직 인증 세션이 살아 있어(owner는 클라 상태) unsubscribe 요청이 서버에서 처리된다.
+    unsubscribePush();
+    setPushOn(false);
+    setPushMsg(null);
     setBound(false);
     setAccount(null);
     setSyncStatus('off');

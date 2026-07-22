@@ -57,4 +57,20 @@ describe('push-store', () => {
     expect(push.listByOwner(A)).toEqual([]);
     expect(push.listByOwner(B)).toEqual([]);
   });
+
+  it('rekeyOwner는 구독을 새 소유자로 이관한다(재키잉 동반)', () => {
+    push.add(A, sub('e1'), 100);
+    push.add(A, sub('e2'), 100);
+    const moved = push.rekeyOwner(A, B);
+    expect(moved).toBe(2);
+    expect(push.listByOwner(A)).toEqual([]);
+    expect(push.listByOwner(B).map((s) => s.endpoint).sort()).toEqual(['e1', 'e2']);
+  });
+
+  it('rekeyOwner는 from===to·빈 값이면 아무것도 안 한다', () => {
+    push.add(A, sub('e1'), 100);
+    expect(push.rekeyOwner(A, A)).toBe(0);
+    expect(push.rekeyOwner('', B)).toBe(0);
+    expect(push.listByOwner(A)).toHaveLength(1);
+  });
 });

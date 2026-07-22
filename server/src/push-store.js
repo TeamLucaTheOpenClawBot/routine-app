@@ -55,5 +55,13 @@ export function createPushStore(db) {
     listByOwner(owner) {
       return listForOwner.all(owner).map((r) => ({ endpoint: r.endpoint, keys: JSON.parse(r.keys) }));
     },
+    // 소유자 키 이관(재키잉) — cells/docs만 옮기는 store.rekeyOwner가 이 별도 테이블은 못 건드리므로
+    // rekey.js가 함께 호출한다. 안 하면 재키잉 후 새 owner의 구독이 비어 푸시를 못 받는다. endpoint는
+    // 사실상 유일해 충돌이 거의 없지만, (to, endpoint)가 이미 있으면 OR REPLACE로 안전하게 병합한다.
+    rekeyOwner(from, to) {
+      if (!from || !to || from === to) return 0;
+      const info = db.prepare('UPDATE OR REPLACE push_subs SET owner = ? WHERE owner = ?').run(to, from);
+      return info.changes ?? 0;
+    },
   };
 }

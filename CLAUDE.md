@@ -180,7 +180,10 @@
   멱등, 410/404 응답이면 `removeEndpoint`로 만료 정리. SW 핸들러(`public/push-sw.js` — push/notificationclick)는
   generateSW를 injectManifest로 바꾸지 않고 `workbox.importScripts`로 얹는다(PWA 셸 불변). 클라이언트
   `pushClient.js`가 `/api/push/key`로 공개키를 받아 `pushManager.subscribe` 후 서버 등록 — 설정 "잠금 화면
-  알림"에서 켠다(동기화 연결+권한 전제). **매일 정시 자동 발송(크론·타임존·미완료 판정)은 #6 2b**.
+  알림"에서 켠다(동기화 연결+권한 전제). **연결 해제(`disableSync`)는 `unsubscribePush`로 서버 행·브라우저
+  구독까지 지운다**(안 하면 다른 기기 발송이 계속 오고 해제 UI도 사라진다). **재키잉도 push_subs를 함께
+  이관**한다(`rekey.js`가 `pushStore.rekeyOwner` 호출 — 안 하면 sub 변경 후 푸시를 못 받는다).
+  **매일 정시 자동 발송(크론·타임존·미완료 판정)은 #6 2b**.
 
 ## 로드맵 단계 메모
 

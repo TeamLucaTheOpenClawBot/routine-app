@@ -8,9 +8,12 @@
 // 그 규칙을 문서 대신 테스트가 지키게 한다.
 
 import { createStore, openDatabase } from './store.js';
+import { createPushStore } from './push-store.js';
 
 const [from, to] = process.argv.slice(2);
-const store = createStore(openDatabase(process.env.DB_PATH ?? '/data/routine.db'));
+const db = openDatabase(process.env.DB_PATH ?? '/data/routine.db');
+const store = createStore(db);
+const pushStore = createPushStore(db); // 같은 DB — 푸시 구독도 함께 이관한다.
 
 if (!from) {
   const rows = store.owners();
@@ -27,5 +30,6 @@ if (!to) {
 }
 
 const moved = store.rekeyOwner(from, to);
-console.log(`이관 완료: cells ${moved.cells}개, docs ${moved.docs}개 → ${to}`);
+const movedPush = pushStore.rekeyOwner(from, to);
+console.log(`이관 완료: cells ${moved.cells}개, docs ${moved.docs}개, 푸시구독 ${movedPush}개 → ${to}`);
 console.log('클라이언트는 다음 동기화에서 전체를 다시 받습니다.');
