@@ -518,12 +518,16 @@ function App() {
         /* noop */
       }
     };
+    const TOLERANCE = 5 * 60 * 1000; // 예약 시각을 이만큼 넘겨 실행되면 stale로 보고 건너뛴다.
     const schedule = () => {
-      const delay = Math.max(0, nextReminderAt(new Date(), remindHour) - Date.now());
+      const target = nextReminderAt(new Date(), remindHour);
       timer = setTimeout(() => {
-        fire();
+        // 동결됐던 백그라운드 탭이 뒤늦게 깨면 콜백이 예약 시각을 한참 지나 즉시 실행될 수 있다 —
+        // 그땐 발화를 건너뛴다(전날 21:00 알림이 다음 날 아침에 뜨고 그날 21:00에도 또 뜨는 이중
+        // 발화·잘못된 시각 방지, #34 Codex P2). 허용 오차 안이면 정상 발화. 어느 쪽이든 다음 날 재예약.
+        if (Date.now() - target <= TOLERANCE) fire();
         schedule();
-      }, delay);
+      }, Math.max(0, target - Date.now()));
     };
     schedule();
     return () => clearTimeout(timer);

@@ -167,7 +167,8 @@
   구하고, App이 `setTimeout`으로 예약→발화→다음날 재예약한다(deps는 notif·notifPerm·remindHour뿐이라
   체크할 때마다 재예약되지 않는다). 미완료 수는 **발화 시점에 `startOfToday()` fresh 날짜로 직접** 센다 —
   `today` 상태는 자정 후 500ms에 갱신되므로 remindHour=0(자정) 발화가 그보다 빨라 전날 수로 알릴 수 있다.
-  알림은 SW `registration.showNotification`(설치 PWA), 없으면
+  또 예약 `target` 시각을 보존해 **동결됐던 탭이 뒤늦게 깨어 콜백이 예약 시각을 5분 넘겨 실행되면 발화를
+  건너뛴다**(전날 알림이 다음 날 아침에 뜨고 그날 또 뜨는 이중 발화 방지). 알림은 SW `registration.showNotification`(설치 PWA), 없으면
   `new Notification()`으로. **한계**: 탭이 살아 있어야 동작한다 — 폰 잠금 상태 정시 알림은 **서버
   Web Push(VAPID+구독 저장+매일 크론)**가 필요하고 #6 2단계다(#7 백엔드 위에 얹는다). `remindHour`는
   설정의 시각 셀렉트로 편집(0~23), notif/remindHour는 기존대로 영속·동기화된다.
