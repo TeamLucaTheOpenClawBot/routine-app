@@ -190,7 +190,9 @@
 - **알림 2b — 매일 정시 크론**(#6 · PR #37): API 프로세스 **in-process `setInterval`(1분)**이 모든 구독을
   훑어 정시 발송한다(`cron.js`). 판정은 순수 `reminders.js`(테스트 대상): `localDateParts(now, tz)`(Intl로
   DST 반영), `incompleteToday(routines, checkedIds)`(클라 remainingToday 서버판), `shouldRemind`(알림 켜짐·
-  로컬 시=remindHour·오늘 미발송·미완료>0). **타임존은 구독에 IANA 문자열로 저장**한다(클라가 subscribe 때
+  로컬 시=remindHour·**정각 창(첫 `REMIND_WINDOW_MIN`=5분)**·오늘 미발송·미완료>0). 정각 창이 없으면 크론
+  틱 위상(프로세스 기동 시각)에 따라 그 시간대 아무 때나 늦게 보낸다(예: :30 재기동 즉시틱) — 클라
+  `nextReminderAt`이 :00에 예약하는 것과 맞춘다. **타임존은 구독에 IANA 문자열로 저장**한다(클라가 subscribe 때
   동봉 — offset보다 DST에 견고) — remindHour는 사용자값(settings doc)이지만 로컬 시각은 기기 tz라, 발송
   타이밍은 구독 단위로 계산한다. `last_sent`(로컬 날짜)로 **하루 1회** 보장(같은 날 재틱은 skip). 미완료는
   `store.getDoc('routines')` + `store.checkedRoutineIds(owner, dateKey)`(non-null 셀)로 서버가 직접 센다.

@@ -61,6 +61,12 @@ describe('reminder cron tick', () => {
     expect(await c.tick()).toBe(0);
   });
 
+  it('정각 창을 벗어난 분(21:30 재기동 등)에는 안 보낸다', async () => {
+    // 2026-07-22T12:30:00Z = 서울 21:30 → 창(0~4분) 밖
+    const c = createReminderCron({ store, pushStore, pushSender: sender, nowFn: () => Date.UTC(2026, 6, 22, 12, 30) });
+    expect(await c.tick()).toBe(0);
+  });
+
   it('오늘 모두 완료했으면 안 보낸다', async () => {
     store.sync(ME, {
       cursor: 0,

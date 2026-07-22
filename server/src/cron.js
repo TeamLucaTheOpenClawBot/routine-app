@@ -28,7 +28,7 @@ export function createReminderCron({ store, pushStore, pushSender, nowFn }) {
     const incompleteCache = new Map(); // `${owner}\t${dateKey}` -> number
     let sent = 0;
     for (const sub of subs) {
-      const { dateKey, hour } = localDateParts(nowMs, sub.tz);
+      const { dateKey, hour, minute } = localDateParts(nowMs, sub.tz);
       let s = settingsCache.get(sub.owner);
       if (!s) {
         const settings = store.getDoc(sub.owner, 'settings') || {};
@@ -41,7 +41,7 @@ export function createReminderCron({ store, pushStore, pushSender, nowFn }) {
         incomplete = incompleteToday(s.routines, store.checkedRoutineIds(sub.owner, dateKey));
         incompleteCache.set(cacheKey, incomplete);
       }
-      if (!shouldRemind({ notif: s.notif, remindHour: s.remindHour, localHour: hour, localDateKey: dateKey, lastSent: sub.lastSent, incomplete })) continue;
+      if (!shouldRemind({ notif: s.notif, remindHour: s.remindHour, localHour: hour, localMinute: minute, localDateKey: dateKey, lastSent: sub.lastSent, incomplete })) continue;
       const n = await pushSender.sendToAll(
         [{ endpoint: sub.endpoint, keys: sub.keys }],
         { title: '루틴 체크', body: `오늘 루틴 ${incomplete}개 남았어요. 마무리해볼까요?`, url: '/' },

@@ -2,16 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { localDateParts, incompleteToday, shouldRemind } from './reminders.js';
 
 describe('localDateParts', () => {
-  it('tz의 로컬 날짜·시를 구한다(DST tz는 Intl이 처리)', () => {
+  it('tz의 로컬 날짜·시·분을 구한다(DST tz는 Intl이 처리)', () => {
     // 2026-07-22T00:30:00Z → 서울(UTC+9)은 09:30, 같은 날짜
     const ms = Date.UTC(2026, 6, 22, 0, 30);
-    expect(localDateParts(ms, 'Asia/Seoul')).toEqual({ dateKey: '2026-07-22', hour: 9 });
+    expect(localDateParts(ms, 'Asia/Seoul')).toEqual({ dateKey: '2026-07-22', hour: 9, minute: 30 });
     // 뉴욕(UTC-4, DST)은 전날 20:30
-    expect(localDateParts(ms, 'America/New_York')).toEqual({ dateKey: '2026-07-21', hour: 20 });
+    expect(localDateParts(ms, 'America/New_York')).toEqual({ dateKey: '2026-07-21', hour: 20, minute: 30 });
   });
   it('잘못된 tz는 UTC로 폴백', () => {
     const ms = Date.UTC(2026, 6, 22, 5, 0);
-    expect(localDateParts(ms, 'Not/AZone')).toEqual({ dateKey: '2026-07-22', hour: 5 });
+    expect(localDateParts(ms, 'Not/AZone')).toEqual({ dateKey: '2026-07-22', hour: 5, minute: 0 });
   });
 });
 
@@ -33,15 +33,20 @@ describe('incompleteToday', () => {
 });
 
 describe('shouldRemind', () => {
-  const base = { notif: true, remindHour: 21, localHour: 21, localDateKey: '2026-07-22', lastSent: null, incomplete: 2 };
-  it('알림 켜짐·정시·미발송·미완료면 true', () => {
+  const base = { notif: true, remindHour: 21, localHour: 21, localMinute: 0, localDateKey: '2026-07-22', lastSent: null, incomplete: 2 };
+  it('알림 켜짐·정각 창·미발송·미완료면 true', () => {
     expect(shouldRemind(base)).toBe(true);
+    expect(shouldRemind({ ...base, localMinute: 4 })).toBe(true); // 창 안(0~4분)
   });
   it('알림 꺼짐이면 false', () => {
     expect(shouldRemind({ ...base, notif: false })).toBe(false);
   });
   it('로컬 시가 remindHour가 아니면 false', () => {
     expect(shouldRemind({ ...base, localHour: 20 })).toBe(false);
+  });
+  it('정각 창(5분)을 벗어난 분이면 false — 늦은 발송 방지', () => {
+    expect(shouldRemind({ ...base, localMinute: 5 })).toBe(false);
+    expect(shouldRemind({ ...base, localMinute: 30 })).toBe(false);
   });
   it('오늘 이미 보냈으면 false', () => {
     expect(shouldRemind({ ...base, lastSent: '2026-07-22' })).toBe(false);
