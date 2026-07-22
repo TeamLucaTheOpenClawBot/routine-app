@@ -534,6 +534,22 @@ export function nextTs(lastTs, now) {
   return Math.min(Number.MAX_SAFE_INTEGER, Math.max(now, (lastTs ?? 0) + 1));
 }
 
+// 로컬 전체를 outbox에 싣는다 — 최초 마이그레이션 '이 기기 데이터로'에서, 이 기기의 모든 칸·문서를
+// 클라우드로 올릴 때 쓴다(#7 4/4). 모든 cell과 3개 doc을 같은 ts로 적재한다. 문서는 whole-doc
+// LWW라 이 ts(보통 now)가 서버 값보다 커야 이 기기가 이긴다 — '이 기기 데이터로'의 의도 그대로다.
+export function enqueueAll(sync, state, ts) {
+  let out = sync;
+  for (const [dateKey, day] of Object.entries(state.checks ?? {})) {
+    for (const [routineId, value] of Object.entries(day)) {
+      out = queueCell(out, dateKey, routineId, value, ts);
+    }
+  }
+  out = queueDoc(out, 'routines', state.routines, ts);
+  out = queueDoc(out, 'bonusChances', state.bonusChances ?? {}, ts);
+  out = queueDoc(out, 'settings', settingsDoc(state), ts);
+  return out;
+}
+
 // 한 칸을 checks에 반영(순수). value null/undefined면 삭제. cycleCheck의 setValue와 같은 규칙.
 function applyCell(checks, dateKey, routineId, value) {
   const day = { ...(checks[dateKey] ?? {}) };

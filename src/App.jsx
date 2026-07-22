@@ -33,11 +33,12 @@ import {
   loadSync,
   saveSync,
   enqueueLocalChanges,
+  enqueueAll,
   syncRequest,
   applySyncResponse,
   nextTs,
 } from './appLogic';
-import { postSync } from './syncClient';
+import { getMe, postSync } from './syncClient';
 
 // 단색 라인 아이콘(24×24, stroke). 루틴용 + UI용.
 const ICONS = {
@@ -134,6 +135,14 @@ function App() {
   const syncGenRef = useRef(0); // 세대 번호. 데이터 초기화가 세대를 올려 비행 중 응답 적용을 무효화한다.
   const syncPendingRef = useRef(false); // 요청 중 트리거가 막혔음을 기록 — 끝나면 재실행한다.
   const syncHaltedRef = useRef(false); // 세션 신원이 outbox 소유자와 다르면(계정 바뀜) 이 세션 동기화 중단.
+  // 동기화 상태 UI (#7 4/4). off=미연결 · syncing · synced · offline · reauth(재로그인) ·
+  // mismatch(다른 계정) · error. owner가 붙어 있으면 마운트 시 곧 동기화가 돌아 갱신된다.
+  const [syncStatus, setSyncStatus] = useState(() => (loadSync().owner ? 'syncing' : 'off'));
+  // 연결 여부는 **owner 바인딩**으로 판정한다(syncStatus와 분리) — 미연결 상태에서 켜기 실패로
+  // status가 offline/reauth가 돼도 시작 버튼이 사라지지 않게(#32 Codex P2).
+  const [bound, setBound] = useState(() => loadSync().owner != null);
+  const [syncBusy, setSyncBusy] = useState(false); // 연결/해제 버튼 진행 중(중복 클릭 방지).
+  const [account, setAccount] = useState(null); // 연결된 계정 표시용(email/sub).
 
   // 단조 증가 논리 시각을 발급한다. 기기 시계가 뒤로 가도 새 편집의 ts가 서버 저장값보다 낮아
   // LWW에서 조용히 지는 걸 막는다(#30 Codex P2). lastTs는 sync 상태에 실려 영속·pull로 갱신된다.
@@ -165,8 +174,12 @@ function App() {
     // 최초 로컬→클라우드 **바인딩·마이그레이션은 통째로 #7 4/4**(getMe로 신원 확정 후 업로드/새로
     // 시작을 사용자가 선택)로 넘긴다. halt 플래그가 아니라 매번 검사만 해, 4/4가 owner를 붙이면 재개된다.
     if (!syncRef.current.owner) return;
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setSyncStatus('offline');
+      return;
+    }
     syncingRef.current = true;
+    setSyncStatus('syncing');
     const gen = syncGenRef.current; // 이 왕복이 시작된 세대. 도중에 초기화되면 응답을 버린다.
     try {
       // 신원 확인과 push를 **한 요청**으로 원자화한다. syncRequest가 outbox 소유자를 expectedOwner로
@@ -182,9 +195,14 @@ function App() {
         // 그 소유자로 push돼 B 계정에 섞인다(#30 Codex P1). 로컬(A) 데이터는 보존되고, 세션이
         // 원래 계정으로 돌아온 뒤 리로드하면 재개된다. 계정 전환 로컬 격리는 #7 4/4.
         syncHaltedRef.current = true;
+        setSyncStatus('mismatch');
         return;
       }
-      if (!res.ok) return; // auth(재인증)·offline·server 구분과 안내는 4/4(동기화 상태 UI)에서.
+      if (!res.ok) {
+        // auth=재로그인 필요 · offline=일시 오프라인 · 그 외=서버 오류. 사용자에게 상태로 구분해 보인다.
+        setSyncStatus(res.kind === 'auth' ? 'reauth' : res.kind === 'offline' ? 'offline' : 'error');
+        return;
+      }
       // 대기 중 데이터 초기화가 있었으면 이 응답은 **초기화 전 커서**로 받은 것이라, 병합하면
       // 방금 지운 routines/checks가 되살아난다 → 세대가 바뀌었으면 통째로 버린다.
       if (syncGenRef.current !== gen) return;
@@ -206,6 +224,7 @@ function App() {
       setWeekStart(merged.weekStart);
       setNotif(merged.notif);
       setRemindHour(merged.remindHour);
+      setSyncStatus('synced');
     } finally {
       syncingRef.current = false;
       // 요청 중 트리거가 막혔으면(그 사이 편집이 쌓였을 수 있다) 곧 재실행한다. 재귀 대신 예약해
@@ -250,6 +269,79 @@ function App() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [runSync]);
+
+  // 마운트 시 이미 연결돼 있으면(owner 바인딩됨) 계정 표시를 위해 신원을 한 번 가져온다.
+  useEffect(() => {
+    if (!syncRef.current.owner) return undefined;
+    let alive = true;
+    getMe().then((me) => {
+      if (alive && me.ok && me.data) setAccount(me.data.email ?? me.data.sub ?? null);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // ── 동기화 켜기(최초 바인딩·마이그레이션) / 끄기 (#7 4/4) ────────────────────
+  // getMe로 세션 신원(sub)을 확정해 owner를 붙인다 → 3/4 엔진이 활성화된다. 이후 push는 그 owner를
+  // expectedOwner로 실어 409로 보호되므로(3/4), getMe와 실제 쓰기 사이 세션이 바뀌어도 남의 계정에
+  // 쓰이지 않는다. mode: 'upload'=이 기기 데이터를 올림(전체 enqueue) · 'cloud'=클라우드로 시작(로컬 대체).
+  const enableSync = async (mode) => {
+    if (syncBusy) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setSyncStatus('offline');
+      return;
+    }
+    setSyncBusy(true);
+    try {
+      const me = await getMe();
+      if (!me.ok || typeof me.data?.sub !== 'string') {
+        setSyncStatus(me.kind === 'auth' ? 'reauth' : 'offline');
+        return;
+      }
+      const sub = me.data.sub;
+      setAccount(me.data.email ?? sub);
+      syncHaltedRef.current = false;
+      syncGenRef.current += 1; // 진행 중이던(있다면) 왕복의 응답을 무효화
+      if (mode === 'cloud') {
+        // 클라우드 데이터로 시작 — 로컬 기록을 비우고 커서 0에서 새로 당겨온다(로컬은 대체된다).
+        const fresh = { routines: defaultRoutines(), checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 };
+        baselineRef.current = fresh;
+        setRoutines(fresh.routines);
+        setChecks(fresh.checks);
+        setBonusChances(fresh.bonusChances);
+        setWeekStart(fresh.weekStart);
+        setNotif(fresh.notif);
+        setRemindHour(fresh.remindHour);
+        syncRef.current = { ...emptySync(), owner: sub, lastTs: syncRef.current.lastTs };
+      } else {
+        // 이 기기 데이터로 — 현재 로컬 전체를 올린다(문서는 whole-doc LWW라 지금 ts로 이 기기가 이긴다).
+        // ts를 먼저 발급해 lastTs를 올린 뒤 owner를 얹어야, enqueueAll 결과에 오른 lastTs가 보존된다.
+        const ts = issueTs();
+        syncRef.current = enqueueAll({ ...syncRef.current, owner: sub }, liveStateRef.current, ts);
+      }
+      saveSync(syncRef.current);
+      setBound(true);
+      setSyncStatus('syncing');
+      runSync();
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  // 연결 해제 — 이 기기에서 동기화를 끈다(owner 제거). 로컬 데이터는 그대로 두고, 재연결하면
+  // 다시 붙는다. 밀지 못한 outbox·커서는 버린다(다른 계정 재연결 시 새 소유자에 새는 것을 막는다).
+  const disableSync = () => {
+    // 세대를 올려 비행 중이던 응답이 owner를 되살리지 못하게 한다(#32 Codex P1) — 안 그러면
+    // 응답이 세대 검사를 통과해 owner를 복원하고 계속 업로드된다.
+    syncGenRef.current += 1;
+    syncRef.current = { ...emptySync(), lastTs: syncRef.current.lastTs };
+    saveSync(syncRef.current);
+    syncHaltedRef.current = false;
+    setBound(false);
+    setAccount(null);
+    setSyncStatus('off');
+  };
 
   // 안내는 잠깐만 띄우고 자동으로 사라진다. 새 안내가 오면 타이머도 새로 잡힌다.
   useEffect(() => {
@@ -535,6 +627,16 @@ function App() {
               weekStart={weekStart}
               onSetWeekStart={setWeekStart}
               onReset={resetAll}
+              syncStatus={syncStatus}
+              connected={bound}
+              account={account}
+              syncBusy={syncBusy}
+              onEnableUpload={() => enableSync('upload')}
+              onEnableCloud={() => {
+                if (typeof window !== 'undefined' && !window.confirm('클라우드 데이터로 시작하면 이 기기의 현재 기록이 클라우드 것으로 대체됩니다. 계속할까요?')) return;
+                enableSync('cloud');
+              }}
+              onDisableSync={disableSync}
             />
           )}
         </div>
@@ -771,10 +873,25 @@ function StatsScreen({ summary, rows }) {
   );
 }
 
-function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remindHour, onToggleNotif, weekStart, onSetWeekStart, onReset }) {
+const SYNC_UI = {
+  off: { label: '연결 안 됨', color: 'var(--color-muted)', dot: 'var(--color-field-border)' },
+  syncing: { label: '동기화 중…', color: 'var(--color-muted)', dot: 'var(--color-primary)' },
+  synced: { label: '동기화됨', color: 'var(--color-primary)', dot: 'var(--color-primary)' },
+  offline: { label: '오프라인 — 연결되면 자동 동기화', color: 'var(--color-muted)', dot: 'var(--color-field-border)' },
+  reauth: { label: '재로그인이 필요해요', color: 'var(--color-expired-text)', dot: 'var(--color-expired-text)' },
+  mismatch: { label: '다른 계정으로 로그인됨 — 새로고침하세요', color: 'var(--color-expired-text)', dot: 'var(--color-expired-text)' },
+  error: { label: '동기화 오류 — 잠시 후 재시도', color: 'var(--color-expired-text)', dot: 'var(--color-expired-text)' },
+};
+
+function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remindHour, onToggleNotif, weekStart, onSetWeekStart, onReset, syncStatus, connected, account, syncBusy, onEnableUpload, onEnableCloud, onDisableSync }) {
   const full = routines.length >= 5;
   const seg = (on) => ({ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: on ? 800 : 700, cursor: 'pointer', background: on ? 'var(--color-primary)' : 'transparent', color: on ? '#fff' : 'var(--color-muted)' });
   const sectionLabel = { fontSize: 12, fontWeight: 800, color: 'var(--color-muted)', letterSpacing: '0.04em', padding: '0 4px 8px' };
+  // 연결 여부는 owner 바인딩(connected) 기준. 미연결일 땐 켜기 시도가 실패해(offline/reauth) 상태가
+  // 바뀌어도 시작 버튼을 유지하고, 그 실패는 힌트로만 보인다(#32 Codex P2).
+  const sync = SYNC_UI[connected ? syncStatus : 'off'] ?? SYNC_UI.off;
+  const enableError = !connected && (syncStatus === 'offline' || syncStatus === 'reauth' || syncStatus === 'error') ? SYNC_UI[syncStatus] : null;
+  const enableBtn = (on) => ({ cursor: syncBusy ? 'default' : 'pointer', opacity: syncBusy ? 0.6 : 1, padding: '9px 14px', borderRadius: 10, fontSize: 13, fontWeight: 800, background: on ? 'var(--color-primary)' : 'var(--color-bg)', color: on ? '#fff' : 'var(--color-text)', border: on ? 'none' : '1px solid var(--color-border)' });
   return (
     <>
       <div style={{ padding: '22px 18px 10px' }}>
@@ -803,6 +920,39 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
             <button type="button" onClick={onAdd} disabled={full} style={{ cursor: full ? 'default' : 'pointer', width: '100%', minHeight: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 14, border: '1.5px dashed var(--color-field-border)', color: full ? 'var(--color-field-border)' : 'var(--color-primary)', fontSize: 15, fontWeight: 800, background: full ? 'var(--color-bg)' : 'var(--color-primary-50)' }}>
               <Icon name="plus" size={18} color={full ? 'var(--color-field-border)' : 'var(--color-primary)'} strokeWidth={2.4} /> 루틴 추가 ({routines.length}/5)
             </button>
+          </div>
+        </div>
+
+        {/* 동기화 */}
+        <div>
+          <div style={sectionLabel}>클라우드 동기화</div>
+          <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: '14px 15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', flex: '0 0 auto', background: sync.dot }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: sync.color }}>{sync.label}</div>
+                {connected && account && (
+                  <div style={{ fontSize: 11.5, color: 'var(--color-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{account}</div>
+                )}
+              </div>
+              {connected && (
+                <button type="button" onClick={onDisableSync} style={{ cursor: 'pointer', flex: '0 0 auto', padding: '7px 12px', borderRadius: 10, fontSize: 12.5, fontWeight: 800, background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>연결 해제</button>
+              )}
+            </div>
+            {!connected && (
+              <>
+                <div style={{ fontSize: 12, color: 'var(--color-muted)', margin: '10px 0 12px', lineHeight: 1.5 }}>
+                  여러 기기에서 같은 기록을 쓰려면 동기화를 켜세요. 시작 방식을 선택하세요.
+                </div>
+                {enableError && (
+                  <div style={{ fontSize: 12, color: 'var(--color-expired-text)', marginBottom: 10, fontWeight: 700 }}>{enableError.label}</div>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <button type="button" disabled={syncBusy} onClick={onEnableUpload} style={enableBtn(true)}>이 기기 데이터로 시작 (클라우드에 올림)</button>
+                  <button type="button" disabled={syncBusy} onClick={onEnableCloud} style={enableBtn(false)}>클라우드 데이터로 시작 (이 기기 기록 대체)</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 

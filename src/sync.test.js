@@ -3,6 +3,7 @@ import {
   applySyncResponse,
   diffState,
   emptySync,
+  enqueueAll,
   enqueueLocalChanges,
   nextTs,
   parseSync,
@@ -72,6 +73,22 @@ describe('outbox 적재 + coalesce', () => {
     expect(nextTs(1000, 500)).toBe(1001); // 시계가 뒤로 가도 이전값+1
     expect(nextTs(1000, 2000)).toBe(2000); // now가 크면 now
     expect(nextTs(Number.MAX_SAFE_INTEGER, 9999999999999)).toBe(Number.MAX_SAFE_INTEGER); // 상한
+  });
+
+  it('enqueueAll은 모든 칸과 3개 문서를 같은 ts로 싣는다(최초 업로드)', () => {
+    const state = baseState({
+      checks: { '2026-07-20': { r1: true }, '2026-07-21': { r1: { chance: 'weekly' } } },
+      bonusChances: { r1: [{ id: 'b1', reason: '장염', createdAt: '2026-07-01T00:00:00.000Z' }] },
+      weekStart: 1,
+    });
+    const req = syncRequest(enqueueAll(emptySync(), state, 500));
+    expect(req.cells).toEqual([
+      { dateKey: '2026-07-20', routineId: 'r1', value: true, ts: 500 },
+      { dateKey: '2026-07-21', routineId: 'r1', value: { chance: 'weekly' }, ts: 500 },
+    ]);
+    expect(req.docs.map((d) => d.key).sort()).toEqual(['bonusChances', 'routines', 'settings']);
+    expect(req.docs.find((d) => d.key === 'settings').value).toEqual({ weekStart: 1, notif: true, remindHour: 21 });
+    expect(req.docs.every((d) => d.ts === 500)).toBe(true);
   });
 
   it('같은 칸을 다시 적재하면 마지막 값만 남는다(coalesce)', () => {
