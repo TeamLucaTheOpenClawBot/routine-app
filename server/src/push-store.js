@@ -16,10 +16,32 @@ CREATE TABLE IF NOT EXISTS push_subs (
 CREATE INDEX IF NOT EXISTS push_by_owner ON push_subs (owner);
 `;
 
-// 들어온 구독을 방어적으로 정규화. 형태가 어긋나면 null(호출자가 400).
+// 발송 시 서버는 endpoint URL로 아웃바운드 요청을 한다(web-push). 임의 endpoint를 저장하면 인증
+// 사용자가 그걸 내부 주소로 지정해 **블라인드 SSRF**를 만들 수 있다(클라 PushManager 검증은 서버를
+// 보호 못 한다). 그래서 알려진 Web Push 서비스 호스트(https)로만 제한한다(#35 Codex P2).
+const PUSH_HOST_SUFFIXES = [
+  'fcm.googleapis.com', // Chrome/Chromium(FCM)
+  'push.services.mozilla.com', // Firefox (updates.push.services.mozilla.com)
+  'notify.windows.com', // Edge/WNS (*.notify.windows.com)
+  'push.apple.com', // Safari (web.push.apple.com)
+];
+
+export function isAllowedPushEndpoint(endpoint) {
+  let u;
+  try {
+    u = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'https:') return false;
+  const host = u.hostname.toLowerCase();
+  return PUSH_HOST_SUFFIXES.some((s) => host === s || host.endsWith(`.${s}`));
+}
+
+// 들어온 구독을 방어적으로 정규화. 형태가 어긋나거나 승인된 푸시 서비스가 아니면 null(호출자가 400).
 export function normalizeSubscription(input) {
   if (!input || typeof input !== 'object') return null;
-  if (typeof input.endpoint !== 'string' || !input.endpoint) return null;
+  if (typeof input.endpoint !== 'string' || !isAllowedPushEndpoint(input.endpoint)) return null;
   const keys = input.keys;
   if (!keys || typeof keys !== 'object') return null;
   if (typeof keys.p256dh !== 'string' || typeof keys.auth !== 'string') return null;

@@ -177,7 +177,10 @@
   compose env(`VAPID_PUBLIC_KEY/PRIVATE_KEY/SUBJECT`), **없으면 푸시 비활성**(구독 저장은 되고 발송만 안 됨,
   fail-safe — 크래시 아님). 절차는 `deploy/README.md`. 엔드포인트 `GET /api/push/key`·`POST
   /api/push/{subscribe,unsubscribe,test}`(소유자는 sync와 같은 검증된 `sub`). 구독은 (owner, endpoint) PK로
-  멱등, 410/404 응답이면 `removeEndpoint`로 만료 정리. SW 핸들러(`public/push-sw.js` — push/notificationclick)는
+  멱등, 410/404 응답이면 `removeEndpoint`로 만료 정리. **endpoint는 알려진 푸시 서비스 호스트(https)로만
+  허용**(`isAllowedPushEndpoint` — fcm.googleapis.com·push.services.mozilla.com·notify.windows.com·push.apple.com):
+  발송 시 서버가 endpoint로 아웃바운드하므로 임의 endpoint를 저장하면 인증 사용자가 내부 주소로 SSRF를
+  만들 수 있다. SW 핸들러(`public/push-sw.js` — push/notificationclick)는
   generateSW를 injectManifest로 바꾸지 않고 `workbox.importScripts`로 얹는다(PWA 셸 불변). 클라이언트
   `pushClient.js`가 `/api/push/key`로 공개키를 받아 `pushManager.subscribe` 후 서버 등록 — 설정 "잠금 화면
   알림"에서 켠다(동기화 연결+권한 전제). **연결 해제(`disableSync`)는 `unsubscribePush`로 서버 행·브라우저
