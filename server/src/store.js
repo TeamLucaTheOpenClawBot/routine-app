@@ -126,6 +126,9 @@ export function createStore(db) {
   `);
   const cellsSince = db.prepare('SELECT date_key, routine_id, value, ts, seq FROM cells WHERE owner = ? AND seq > ? ORDER BY seq');
   const docsSince = db.prepare('SELECT key, value, ts, seq FROM docs WHERE owner = ? AND seq > ? ORDER BY seq');
+  // 리마인더 크론(#6 2b)이 현재 상태를 읽는 용도 — seq 커서와 무관하게 최신 스냅샷.
+  const getDocStmt = db.prepare('SELECT value FROM docs WHERE owner = ? AND key = ?');
+  const checkedStmt = db.prepare('SELECT routine_id FROM cells WHERE owner = ? AND date_key = ? AND value IS NOT NULL');
 
   return {
     // 밀어넣고(push) 그 자리에서 당겨온다(pull). 한 번의 왕복으로 끝내 중간 상태를 만들지 않는다.
@@ -217,6 +220,22 @@ export function createStore(db) {
             ORDER BY cells + docs DESC, owner`,
         )
         .all();
+    },
+
+    // 현재 문서 값(파싱). 없으면 null. 리마인더 크론이 settings·routines를 읽는다.
+    getDoc(owner, key) {
+      const row = getDocStmt.get(owner, key);
+      if (!row) return null;
+      try {
+        return JSON.parse(row.value);
+      } catch {
+        return null;
+      }
+    },
+
+    // 그 날짜에 **처리된(non-null 셀)** 루틴 id 목록 — 했음·찬스 모두 포함(툼스톤 제외).
+    checkedRoutineIds(owner, dateKey) {
+      return checkedStmt.all(owner, dateKey).map((r) => r.routine_id);
     },
   };
 }

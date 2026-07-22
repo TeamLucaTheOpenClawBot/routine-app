@@ -10,6 +10,7 @@ import { createJwksCache, extractAccessToken, verifyWithRotation } from './acces
 import { createStore, openDatabase } from './store.js';
 import { createPushStore, normalizeSubscription } from './push-store.js';
 import { createPushSender } from './push-send.js';
+import { createReminderCron } from './cron.js';
 
 const PORT = Number(process.env.PORT ?? 8081);
 const TEAM_DOMAIN = process.env.ACCESS_TEAM_DOMAIN?.replace(/\/+$/, '');
@@ -176,7 +177,9 @@ const server = createServer(async (req, res) => {
       const sub = normalizeSubscription(body.value);
       if (!sub) return json(res, 400, { error: 'invalid_subscription' });
       try {
-        pushStore.add(owner, sub, Date.now());
+        // tz(IANA)는 크론이 이 기기의 로컬 remindHour를 계산하는 데 쓴다(#6 2b). 없으면 null.
+        const tz = body.value && typeof body.value.tz === 'string' ? body.value.tz : null;
+        pushStore.add(owner, sub, Date.now(), tz);
         return json(res, 200, { ok: true });
       } catch (err) {
         console.error('push subscribe 실패:', err);
@@ -225,6 +228,14 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => console.log(`routine-app API listening on ${PORT}`));
 
-const shutdown = () => server.close(() => process.exit(0));
+// 데일리 리마인더 크론(#6 2b). 발송기가 없으면(VAPID 미설정) tick은 no-op이라 켜도 무해하다.
+// 1분마다 각 구독의 로컬 remindHour를 확인해 미완료가 있으면 발송한다(하루 1회).
+const reminderCron = createReminderCron({ store, pushStore, pushSender });
+reminderCron.start();
+
+const shutdown = () => {
+  reminderCron.stop();
+  server.close(() => process.exit(0));
+};
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);

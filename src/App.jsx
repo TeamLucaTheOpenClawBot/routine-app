@@ -40,7 +40,7 @@ import {
   nextTs,
 } from './appLogic';
 import { getMe, postSync } from './syncClient';
-import { pushSupported, currentSubscription, subscribePush, unsubscribePush, sendTestPush } from './pushClient';
+import { pushSupported, currentSubscription, subscribePush, unsubscribePush, sendTestPush, refreshTimezone } from './pushClient';
 
 // 단색 라인 아이콘(24×24, stroke). 루틴용 + UI용.
 const ICONS = {
@@ -369,7 +369,10 @@ function App() {
     }
     let alive = true;
     currentSubscription().then((sub) => {
-      if (alive) setPushOn(Boolean(sub));
+      if (!alive) return;
+      setPushOn(Boolean(sub));
+      // 구독이 있으면 앱 시작 시 tz를 최신값으로 다시 등록한다 — 기기 이동/시스템 tz 변경 반영(#37 Codex P2).
+      if (sub) refreshTimezone();
     });
     return () => {
       alive = false;

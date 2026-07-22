@@ -60,11 +60,18 @@ export async function subscribePush() {
     if (!sub) {
       sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
     }
+    // tz(IANA)를 함께 보낸다 — 서버 크론이 이 기기의 로컬 remindHour를 계산해 정시 발송한다(#6 2b).
+    let tz = null;
+    try {
+      tz = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+    } catch {
+      tz = null;
+    }
     const res = await fetch('/api/push/subscribe', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(sub.toJSON()),
+      body: JSON.stringify({ ...sub.toJSON(), tz }),
     });
     if (!res.ok) return { ok: false, kind: 'error' };
     return { ok: true };
@@ -102,6 +109,30 @@ export async function unsubscribePush({ force = false } = {}) {
     }
   }
   return { ok: serverOk };
+}
+
+// 기존 구독의 타임존을 현재 값으로 다시 등록한다(#37 Codex P2). tz는 subscribe 때만 캡처되므로,
+// 기기가 이동하거나 시스템 tz가 바뀌면 서버 크론이 옛 zone으로 잘못된 시각에 보낸다 — 앱 시작 시
+// 호출해 최신 tz를 upsert한다. 구독이 없으면 아무것도 안 한다(가벼운 재등록, VAPID 조회 불필요).
+export async function refreshTimezone() {
+  const sub = await currentSubscription();
+  if (!sub) return;
+  let tz = null;
+  try {
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    tz = null;
+  }
+  try {
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...sub.toJSON(), tz }),
+    });
+  } catch {
+    /* 다음 시작에서 다시 시도 */
+  }
 }
 
 // 테스트 발송(서버가 이 소유자의 구독에 실제 푸시). 결과 { ok, sent } 또는 { ok:false }.
