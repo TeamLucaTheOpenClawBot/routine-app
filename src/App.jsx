@@ -40,6 +40,7 @@ import {
   nextTs,
 } from './appLogic';
 import { getMe, postSync } from './syncClient';
+import { pushSupported, currentSubscription, subscribePush, unsubscribePush, sendTestPush } from './pushClient';
 
 // 단색 라인 아이콘(24×24, stroke). 루틴용 + UI용.
 const ICONS = {
@@ -118,6 +119,10 @@ function App() {
   const [remindHour, setRemindHour] = useState(() => persisted?.remindHour ?? 21);
   // 브라우저 알림 권한 상태(#6). 'default'|'granted'|'denied'|'unsupported'.
   const [notifPerm, setNotifPerm] = useState(() => (typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'));
+  // 잠금 화면 알림(서버 Web Push, #6 2단계) 구독 상태. pushOn=이 기기가 구독됨.
+  const [pushOn, setPushOn] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState(null); // 테스트/오류 등 일시 안내
   const [weekStart, setWeekStart] = useState(() => persisted?.weekStart ?? 0);
   const scrollRef = useRef(null);
 
@@ -344,6 +349,72 @@ function App() {
     setBound(false);
     setAccount(null);
     setSyncStatus('off');
+  };
+
+  // ── 잠금 화면 알림 (서버 Web Push, #6 2단계) ──────────────────────────────
+  // 전제: 동기화 연결(owner 바인딩)과 알림 권한. 서버가 이 소유자의 구독으로 푸시를 보내므로
+  // 앱이 꺼져 있어도(폰 잠금) 알림이 온다. 연결 해제/미연결이면 구독도 없다.
+  useEffect(() => {
+    if (!bound) {
+      setPushOn(false);
+      return undefined;
+    }
+    let alive = true;
+    currentSubscription().then((sub) => {
+      if (alive) setPushOn(Boolean(sub));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [bound]);
+
+  const enablePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    setPushMsg(null);
+    try {
+      const r = await subscribePush();
+      if (r.ok) {
+        setPushOn(true);
+        setPushMsg('이 기기를 등록했어요.');
+      } else {
+        setPushOn(false);
+        setPushMsg(
+          r.kind === 'disabled'
+            ? '서버 푸시가 아직 설정되지 않았어요.'
+            : r.kind === 'denied'
+              ? '먼저 알림을 허용해 주세요.'
+              : r.kind === 'unsupported'
+                ? '이 기기는 잠금 알림을 지원하지 않아요.'
+                : '등록에 실패했어요. 잠시 후 다시 시도해 주세요.',
+        );
+      }
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const disablePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      await unsubscribePush();
+      setPushOn(false);
+      setPushMsg(null);
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const testPush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      const r = await sendTestPush();
+      setPushMsg(r.ok ? (r.sent > 0 ? '테스트 알림을 보냈어요.' : '등록된 기기가 없어요.') : '테스트 발송에 실패했어요.');
+    } finally {
+      setPushBusy(false);
+    }
   };
 
   // 안내는 잠깐만 띄우고 자동으로 사라진다. 새 안내가 오면 타이머도 새로 잡힌다.
@@ -703,6 +774,7 @@ function App() {
               notifPerm={notifPerm}
               onToggleNotif={toggleNotif}
               onSetRemindHour={setRemindHour}
+              push={{ supported: pushSupported(), on: pushOn, busy: pushBusy, msg: pushMsg, connected: bound, onEnable: enablePush, onDisable: disablePush, onTest: testPush }}
               weekStart={weekStart}
               onSetWeekStart={setWeekStart}
               onReset={resetAll}
@@ -962,7 +1034,7 @@ const SYNC_UI = {
   error: { label: '동기화 오류 — 잠시 후 재시도', color: 'var(--color-expired-text)', dot: 'var(--color-expired-text)' },
 };
 
-function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remindHour, notifPerm, onToggleNotif, onSetRemindHour, weekStart, onSetWeekStart, onReset, syncStatus, connected, account, syncBusy, onEnableUpload, onEnableCloud, onDisableSync }) {
+function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remindHour, notifPerm, onToggleNotif, onSetRemindHour, push, weekStart, onSetWeekStart, onReset, syncStatus, connected, account, syncBusy, onEnableUpload, onEnableCloud, onDisableSync }) {
   const full = routines.length >= 5;
   const seg = (on) => ({ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: on ? 800 : 700, cursor: 'pointer', background: on ? 'var(--color-primary)' : 'transparent', color: on ? '#fff' : 'var(--color-muted)' });
   const sectionLabel = { fontSize: 12, fontWeight: 800, color: 'var(--color-muted)', letterSpacing: '0.04em', padding: '0 4px 8px' };
@@ -1064,8 +1136,30 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
                 </select>
               </div>
             )}
+            {/* 잠금 화면 알림 — 서버 Web Push(#6 2단계). 동기화 연결 + 권한이 있어야 등록 가능. */}
+            {notif && push?.supported && (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 700 }}>잠금 화면 알림</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--color-muted)', marginTop: 2 }}>앱이 꺼져 있어도 서버가 보내요{push.on ? ' · 이 기기 등록됨' : ''}</div>
+                  </div>
+                  {!push.connected ? (
+                    <span style={{ fontSize: 11.5, color: 'var(--color-muted)', flex: '0 0 auto' }}>동기화 필요</span>
+                  ) : push.on ? (
+                    <button type="button" disabled={push.busy} onClick={push.onDisable} style={{ cursor: push.busy ? 'default' : 'pointer', opacity: push.busy ? 0.6 : 1, flex: '0 0 auto', padding: '7px 12px', borderRadius: 10, fontSize: 12.5, fontWeight: 800, background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>해제</button>
+                  ) : (
+                    <button type="button" disabled={push.busy} onClick={push.onEnable} style={{ cursor: push.busy ? 'default' : 'pointer', opacity: push.busy ? 0.6 : 1, flex: '0 0 auto', padding: '7px 12px', borderRadius: 10, fontSize: 12.5, fontWeight: 800, background: 'var(--color-primary)', color: '#fff', border: 'none' }}>이 기기 등록</button>
+                  )}
+                </div>
+                {push.connected && push.on && (
+                  <button type="button" disabled={push.busy} onClick={push.onTest} style={{ marginTop: 10, cursor: push.busy ? 'default' : 'pointer', opacity: push.busy ? 0.6 : 1, padding: '7px 12px', borderRadius: 10, fontSize: 12.5, fontWeight: 700, background: 'var(--color-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>테스트 알림 보내기</button>
+                )}
+                {push.msg && <div style={{ fontSize: 11.5, color: 'var(--color-muted)', marginTop: 8, fontWeight: 700 }}>{push.msg}</div>}
+              </div>
+            )}
             <div style={{ fontSize: 11.5, color: 'var(--color-muted)', marginTop: 10, lineHeight: 1.5 }}>
-              지금은 앱이 열려 있을 때만 동작해요. 폰이 잠겨 있어도 오는 정시 알림은 준비 중이에요.
+              앱이 열려 있을 때는 위 시각에 알려요. 잠금 화면 알림은 동기화를 켜고 이 기기를 등록하세요.
             </div>
           </div>
         </div>

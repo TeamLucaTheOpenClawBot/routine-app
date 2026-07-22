@@ -27,6 +27,11 @@ services:
       ACCESS_TEAM_DOMAIN: ${ACCESS_TEAM_DOMAIN:-}
       ACCESS_AUD: ${ACCESS_AUD:-}
       DB_PATH: /data/routine.db
+      # Web Push(#6 2단계). 비어 있으면 푸시는 비활성(구독 저장은 되지만 발송 안 됨) — fail-safe라
+      # 크래시하지 않는다. 키 생성·설정 절차는 deploy/README.md. VAPID_SUBJECT는 mailto: 또는 https URL.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
     volumes:
       # 동기화 데이터는 컨테이너 교체·롤백에도 남아야 한다. 이미지 안이 아니라 볼륨에 둔다.
       - routine-api-data:/data

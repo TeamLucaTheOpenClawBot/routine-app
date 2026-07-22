@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import App from './App';
 import { STORAGE_KEY, serializeState } from './appLogic';
@@ -207,7 +207,11 @@ describe('클라우드 동기화 UI (#7 4/4)', () => {
   });
 });
 
-describe('알림 설정 UI (#6 1단계)', () => {
+describe('알림 설정 UI (#6)', () => {
+  afterEach(() => {
+    delete global.Notification; // 목킹이 다음 테스트로 새지 않게(#6 2단계 회귀 방지).
+  });
+
   it('권한 granted면 시각 셀렉트를 보여주고 라벨에 반영한다', () => {
     // 권한이 있어야 실제 켜짐(remindersOn)이 되어 시각 편집이 나타난다.
     global.Notification = { permission: 'granted', requestPermission: async () => 'granted' };
@@ -217,8 +221,8 @@ describe('알림 설정 UI (#6 1단계)', () => {
     const sel = screen.getByLabelText('알림 시각');
     fireEvent.change(sel, { target: { value: '8' } });
     expect(screen.getByText(/08:00 · 앱이 열려 있을 때 알림/)).toBeInTheDocument();
-    expect(screen.getByText(/폰이 잠겨 있어도 오는 정시 알림은 준비 중/)).toBeInTheDocument();
-    delete global.Notification;
+    // 잠금 화면 알림 안내(2단계). jsdom엔 PushManager가 없어 등록 버튼 자체는 안 뜨지만 안내는 있다.
+    expect(screen.getByText(/잠금 화면 알림은 동기화를 켜고 이 기기를 등록/)).toBeInTheDocument();
   });
 
   it('알림 미지원 브라우저면 시각 셀렉트 없이 안내만 보여준다', () => {
