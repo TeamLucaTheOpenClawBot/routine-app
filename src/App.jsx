@@ -9,6 +9,7 @@ import {
   startOfToday,
   formatDateKey,
   parseDateKey,
+  nextReminderAt,
   rangeStart,
   weekCount,
   achieved,
@@ -115,6 +116,8 @@ function App() {
   const [notice, setNotice] = useState(null); // 찬스 소진 등 일시 안내
   const [notif, setNotif] = useState(() => persisted?.notif ?? true);
   const [remindHour, setRemindHour] = useState(() => persisted?.remindHour ?? 21);
+  // 브라우저 알림 권한 상태(#6). 'default'|'granted'|'denied'|'unsupported'.
+  const [notifPerm, setNotifPerm] = useState(() => (typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'));
   const [weekStart, setWeekStart] = useState(() => persisted?.weekStart ?? 0);
   const scrollRef = useRef(null);
 
@@ -456,6 +459,80 @@ function App() {
   const todayDone = todayRows.filter((r) => r.done).length;
   const todayPct = todayRows.length ? Math.round((todayDone / todayRows.length) * 100) : 0;
 
+  // ── 데일리 리마인더 (#6 1단계, best-effort) ────────────────────────────────
+  // 신뢰성 있는 폰 잠금 알림은 서버 푸시(VAPID+크론)가 필요하다(#6 2단계). 여기선 권한을 받고,
+  // **앱이 열려 있는 동안** 지정 시각에 SW/페이지 알림을 띄운다(탭이 살아 있어야 동작 — 한계 명시).
+  // 알림 발화 시점의 미완료 수는 **그때 fresh 날짜로 직접** 센다 — `today` 상태는 자정 후 500ms에야
+  // 갱신되므로(자정 리마인더 remindHour=0이면 발화가 그보다 빠르다), pre-render 값을 쓰면 전날 수로
+  // 알린다(#34 Codex P2). liveStateRef의 현재 루틴·체크로 계산해 타이머 재설정도 필요 없다.
+  const remainingToday = () => {
+    const key = formatDateKey(startOfToday());
+    const st = liveStateRef.current;
+    return st.routines.filter((r) => r.visible && checkState(st.checks, key, r.id) === 'none').length;
+  };
+
+  // **실제 켜짐** = 사용자 선호(notif) + 브라우저 권한(granted). notif 기본값이 true여도 권한이
+  // default/denied면 알림이 안 뜨므로, 토글 표시·분기·시각편집을 이 파생값에 맞춘다 — 미허용 상태에서
+  // 토글이 "켜짐"으로 보이는데 아무 일도 안 하는 모순을 없앤다(#34 Codex P2). 한 번 누르면 권한 요청.
+  const remindersOn = notif && notifPerm === 'granted';
+
+  const toggleNotif = async () => {
+    if (remindersOn) {
+      setNotif(false);
+      return;
+    }
+    if (typeof Notification === 'undefined') {
+      setNotifPerm('unsupported');
+      return; // 알림 미지원 브라우저 — 켤 수 없다
+    }
+    let perm = Notification.permission;
+    if (perm === 'default') {
+      try {
+        perm = await Notification.requestPermission();
+      } catch {
+        perm = Notification.permission;
+      }
+    }
+    setNotifPerm(perm);
+    setNotif(perm === 'granted'); // 거부/보류면 켜지지 않는다(설정에 사유 표시)
+  };
+
+  // 리마인더 예약: notif ON + 권한 granted일 때만. 다음 remindHour:00에 알림을 띄우고 다음 날 재예약.
+  // deps에 체크 상태를 넣지 않는다 — 체크할 때마다 타이머가 재설정되지 않게, 미완료 수는 ref로 읽는다.
+  useEffect(() => {
+    if (!notif || notifPerm !== 'granted' || typeof window === 'undefined') return undefined;
+    let timer;
+    const fire = () => {
+      const left = remainingToday();
+      if (left <= 0) return; // 오늘 다 했으면 안 보낸다
+      const title = '루틴 체크';
+      const body = `오늘 루틴 ${left}개 남았어요. 마무리해볼까요?`;
+      const opts = { body, icon: '/pwa-192x192.png', badge: '/pwa-192x192.png', tag: 'daily-reminder' };
+      try {
+        if (navigator.serviceWorker?.controller) {
+          navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, opts)).catch(() => {});
+        } else if (typeof Notification !== 'undefined') {
+          new Notification(title, opts);
+        }
+      } catch {
+        /* noop */
+      }
+    };
+    const TOLERANCE = 5 * 60 * 1000; // 예약 시각을 이만큼 넘겨 실행되면 stale로 보고 건너뛴다.
+    const schedule = () => {
+      const target = nextReminderAt(new Date(), remindHour);
+      timer = setTimeout(() => {
+        // 동결됐던 백그라운드 탭이 뒤늦게 깨면 콜백이 예약 시각을 한참 지나 즉시 실행될 수 있다 —
+        // 그땐 발화를 건너뛴다(전날 21:00 알림이 다음 날 아침에 뜨고 그날 21:00에도 또 뜨는 이중
+        // 발화·잘못된 시각 방지, #34 Codex P2). 허용 오차 안이면 정상 발화. 어느 쪽이든 다음 날 재예약.
+        if (Date.now() - target <= TOLERANCE) fire();
+        schedule();
+      }, Math.max(0, target - Date.now()));
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, [notif, notifPerm, remindHour]);
+
   const stats = useMemo(() => {
     const perRoutine = visibleRoutines.map((routine) => {
       const results = finalizedResults(routine, checks, weekStart, today);
@@ -621,9 +698,11 @@ function App() {
               onEdit={openEditForm}
               onToggleVisible={toggleVisible}
               onAdd={openAddForm}
-              notif={notif}
+              notif={remindersOn}
               remindHour={remindHour}
-              onToggleNotif={() => setNotif((v) => !v)}
+              notifPerm={notifPerm}
+              onToggleNotif={toggleNotif}
+              onSetRemindHour={setRemindHour}
               weekStart={weekStart}
               onSetWeekStart={setWeekStart}
               onReset={resetAll}
@@ -883,7 +962,7 @@ const SYNC_UI = {
   error: { label: '동기화 오류 — 잠시 후 재시도', color: 'var(--color-expired-text)', dot: 'var(--color-expired-text)' },
 };
 
-function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remindHour, onToggleNotif, weekStart, onSetWeekStart, onReset, syncStatus, connected, account, syncBusy, onEnableUpload, onEnableCloud, onDisableSync }) {
+function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remindHour, notifPerm, onToggleNotif, onSetRemindHour, weekStart, onSetWeekStart, onReset, syncStatus, connected, account, syncBusy, onEnableUpload, onEnableCloud, onDisableSync }) {
   const full = routines.length >= 5;
   const seg = (on) => ({ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: on ? 800 : 700, cursor: 'pointer', background: on ? 'var(--color-primary)' : 'transparent', color: on ? '#fff' : 'var(--color-muted)' });
   const sectionLabel = { fontSize: 12, fontWeight: 800, color: 'var(--color-muted)', letterSpacing: '0.04em', padding: '0 4px 8px' };
@@ -959,14 +1038,35 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
         {/* 알림 */}
         <div>
           <div style={sectionLabel}>알림</div>
-          <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: '14px 15px', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>매일 리마인더</div>
-              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 2 }}>매일 {remindHour}:00 알림</div>
+          <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: '14px 15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>매일 리마인더</div>
+                <div style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 2 }}>매일 {String(remindHour).padStart(2, '0')}:00 · 앱이 열려 있을 때 알림</div>
+              </div>
+              <button type="button" aria-label="매일 리마인더" aria-pressed={notif} onClick={onToggleNotif} style={{ width: 46, height: 27, borderRadius: 999, flex: '0 0 auto', background: notif ? 'var(--color-primary)' : 'var(--color-field-border)', position: 'relative', cursor: 'pointer', transition: 'background .18s', padding: 0 }}>
+                <span style={{ position: 'absolute', top: 3, left: notif ? 22 : 3, width: 21, height: 21, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.2)', transition: 'left .18s' }} />
+              </button>
             </div>
-            <button type="button" onClick={onToggleNotif} style={{ width: 46, height: 27, borderRadius: 999, flex: '0 0 auto', background: notif ? 'var(--color-primary)' : 'var(--color-field-border)', position: 'relative', cursor: 'pointer', transition: 'background .18s', padding: 0 }}>
-              <span style={{ position: 'absolute', top: 3, left: notif ? 22 : 3, width: 21, height: 21, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.2)', transition: 'left .18s' }} />
-            </button>
+            {notifPerm === 'denied' && (
+              <div style={{ fontSize: 12, color: 'var(--color-expired-text)', marginTop: 10, fontWeight: 700 }}>브라우저에서 알림이 차단됨 — 사이트 설정에서 허용하세요.</div>
+            )}
+            {notifPerm === 'unsupported' && (
+              <div style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 10 }}>이 브라우저는 알림을 지원하지 않아요.</div>
+            )}
+            {notif && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
+                <div style={{ flex: 1, fontSize: 14.5, fontWeight: 700 }}>알림 시각</div>
+                <select value={remindHour} onChange={(e) => onSetRemindHour(Number(e.target.value))} aria-label="알림 시각" style={{ padding: '7px 10px', borderRadius: 10, fontSize: 13, fontWeight: 700, background: 'var(--color-bg)', color: 'var(--color-text)', border: '1px solid var(--color-border)', cursor: 'pointer' }}>
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div style={{ fontSize: 11.5, color: 'var(--color-muted)', marginTop: 10, lineHeight: 1.5 }}>
+              지금은 앱이 열려 있을 때만 동작해요. 폰이 잠겨 있어도 오는 정시 알림은 준비 중이에요.
+            </div>
           </div>
         </div>
 

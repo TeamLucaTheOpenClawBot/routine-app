@@ -159,6 +159,20 @@
     owner를 떼고 outbox·커서를 버려(다른 계정 재연결 시 새는 것 방지) 동기화를 끈다(로컬 데이터는 보존).
     상태(`syncStatus`)는 off·syncing·synced·offline·reauth·mismatch·error로 설정 화면에 표시된다.
 
+- **알림**(#6 · 1단계 PR #34): 설정 토글 ON 시 `Notification.requestPermission()`으로 권한을 받고
+  (`notifPerm`), granted면 **앱이 열려 있는 동안** 다음 `remindHour`:00에 알림을 띄운다(미완료가 있을 때만).
+  **실제 켜짐은 `notif && notifPerm==='granted'`**(`remindersOn`)로 판정한다 — notif 기본값이 true여도
+  권한이 없으면 토글을 꺼짐으로 보여, "켜짐인데 안 뜨는" 모순과 두 번 눌러야 권한 요청되는 문제를 없앤다.
+  예약 시각은 순수 함수 `nextReminderAt(now, remindHour)`(자정 넘김·정각 중복발화 방지, 테스트 대상)로
+  구하고, App이 `setTimeout`으로 예약→발화→다음날 재예약한다(deps는 notif·notifPerm·remindHour뿐이라
+  체크할 때마다 재예약되지 않는다). 미완료 수는 **발화 시점에 `startOfToday()` fresh 날짜로 직접** 센다 —
+  `today` 상태는 자정 후 500ms에 갱신되므로 remindHour=0(자정) 발화가 그보다 빨라 전날 수로 알릴 수 있다.
+  또 예약 `target` 시각을 보존해 **동결됐던 탭이 뒤늦게 깨어 콜백이 예약 시각을 5분 넘겨 실행되면 발화를
+  건너뛴다**(전날 알림이 다음 날 아침에 뜨고 그날 또 뜨는 이중 발화 방지). 알림은 SW `registration.showNotification`(설치 PWA), 없으면
+  `new Notification()`으로. **한계**: 탭이 살아 있어야 동작한다 — 폰 잠금 상태 정시 알림은 **서버
+  Web Push(VAPID+구독 저장+매일 크론)**가 필요하고 #6 2단계다(#7 백엔드 위에 얹는다). `remindHour`는
+  설정의 시각 셀렉트로 편집(0~23), notif/remindHour는 기존대로 영속·동기화된다.
+
 ## 로드맵 단계 메모
 
 - Phase 1: ~~#1 실제 날짜~~(완료 · PR #11) · ~~#2 localStorage 영속화 + 데모 시드 제거~~(완료 · PR #13)
@@ -170,5 +184,6 @@
   `relay.chillingdaisy.org` DNS 등 소소한 항목이 남아 있다
 - Phase 3: ~~#7 백엔드·계정·클라우드 동기화~~(**완료** · 1/4 스캐폴드 PR #27 · 2/4 저장소 PR #28 ·
   3/4 클라이언트 동기화 엔진 PR #30 · 4/4 활성화·마이그레이션·상태 UI PR #32 — 설정에서 켜면 owner를
-  바인딩해 엔진 활성화) · **다음 → #6 알림**(매일 리마인더)
+  바인딩해 엔진 활성화) · **#6 알림 진행 중**(1단계 권한+베스트에포트+시각편집 PR #34 — 폰 잠금
+  정시 알림=서버 Web Push는 2단계 후속)
 - 상시: #8 테스트·접근성·에러 처리·브랜딩

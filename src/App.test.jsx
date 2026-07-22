@@ -206,3 +206,26 @@ describe('클라우드 동기화 UI (#7 4/4)', () => {
     expect(screen.queryByText('연결 해제')).not.toBeInTheDocument();
   });
 });
+
+describe('알림 설정 UI (#6 1단계)', () => {
+  it('권한 granted면 시각 셀렉트를 보여주고 라벨에 반영한다', () => {
+    // 권한이 있어야 실제 켜짐(remindersOn)이 되어 시각 편집이 나타난다.
+    global.Notification = { permission: 'granted', requestPermission: async () => 'granted' };
+    render(<App />);
+    fireEvent.click(screen.getByText('설정'));
+    expect(screen.getByText('매일 리마인더')).toBeInTheDocument();
+    const sel = screen.getByLabelText('알림 시각');
+    fireEvent.change(sel, { target: { value: '8' } });
+    expect(screen.getByText(/08:00 · 앱이 열려 있을 때 알림/)).toBeInTheDocument();
+    expect(screen.getByText(/폰이 잠겨 있어도 오는 정시 알림은 준비 중/)).toBeInTheDocument();
+    delete global.Notification;
+  });
+
+  it('알림 미지원 브라우저면 시각 셀렉트 없이 안내만 보여준다', () => {
+    // jsdom 기본: Notification 없음 → unsupported → 실제 켜짐이 아니므로 시각 편집 숨김.
+    render(<App />);
+    fireEvent.click(screen.getByText('설정'));
+    expect(screen.getByText('이 브라우저는 알림을 지원하지 않아요.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('알림 시각')).not.toBeInTheDocument();
+  });
+});

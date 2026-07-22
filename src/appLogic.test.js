@@ -27,6 +27,7 @@ import {
   saveState,
   serializeState,
   startOfToday,
+  nextReminderAt,
   startOfWeek,
   STORAGE_KEY,
   STORAGE_KEY_V1,
@@ -531,5 +532,22 @@ describe('찬스 — 기타찬스 목록 파생', () => {
 
   it('목록이 없으면 빈 배열', () => {
     expect(bonusChanceRows({}, 'r1', undefined)).toEqual([]);
+  });
+});
+
+describe('리마인더 시각 (#6)', () => {
+  it('오늘 remindHour 이전이면 오늘 그 시각을 준다', () => {
+    const now = new Date(2026, 6, 22, 9, 30); // 09:30
+    expect(nextReminderAt(now, 21)).toBe(new Date(2026, 6, 22, 21, 0, 0, 0).getTime());
+  });
+
+  it('이미 remindHour를 지났으면 내일 그 시각을 준다', () => {
+    const now = new Date(2026, 6, 22, 22, 10); // 22:10
+    expect(nextReminderAt(now, 21)).toBe(new Date(2026, 6, 23, 21, 0, 0, 0).getTime());
+  });
+
+  it('정확히 그 시각이면(<=) 내일로 넘긴다 — 중복 발화 방지', () => {
+    const now = new Date(2026, 6, 22, 21, 0, 0, 0);
+    expect(nextReminderAt(now, 21)).toBe(new Date(2026, 6, 23, 21, 0, 0, 0).getTime());
   });
 });
