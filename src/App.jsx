@@ -138,6 +138,9 @@ function App() {
   // 동기화 상태 UI (#7 4/4). off=미연결 · syncing · synced · offline · reauth(재로그인) ·
   // mismatch(다른 계정) · error. owner가 붙어 있으면 마운트 시 곧 동기화가 돌아 갱신된다.
   const [syncStatus, setSyncStatus] = useState(() => (loadSync().owner ? 'syncing' : 'off'));
+  // 연결 여부는 **owner 바인딩**으로 판정한다(syncStatus와 분리) — 미연결 상태에서 켜기 실패로
+  // status가 offline/reauth가 돼도 시작 버튼이 사라지지 않게(#32 Codex P2).
+  const [bound, setBound] = useState(() => loadSync().owner != null);
   const [syncBusy, setSyncBusy] = useState(false); // 연결/해제 버튼 진행 중(중복 클릭 방지).
   const [account, setAccount] = useState(null); // 연결된 계정 표시용(email/sub).
 
@@ -318,6 +321,7 @@ function App() {
         syncRef.current = enqueueAll({ ...syncRef.current, owner: sub }, liveStateRef.current, ts);
       }
       saveSync(syncRef.current);
+      setBound(true);
       setSyncStatus('syncing');
       runSync();
     } finally {
@@ -328,9 +332,13 @@ function App() {
   // 연결 해제 — 이 기기에서 동기화를 끈다(owner 제거). 로컬 데이터는 그대로 두고, 재연결하면
   // 다시 붙는다. 밀지 못한 outbox·커서는 버린다(다른 계정 재연결 시 새 소유자에 새는 것을 막는다).
   const disableSync = () => {
+    // 세대를 올려 비행 중이던 응답이 owner를 되살리지 못하게 한다(#32 Codex P1) — 안 그러면
+    // 응답이 세대 검사를 통과해 owner를 복원하고 계속 업로드된다.
+    syncGenRef.current += 1;
     syncRef.current = { ...emptySync(), lastTs: syncRef.current.lastTs };
     saveSync(syncRef.current);
     syncHaltedRef.current = false;
+    setBound(false);
     setAccount(null);
     setSyncStatus('off');
   };
@@ -620,6 +628,7 @@ function App() {
               onSetWeekStart={setWeekStart}
               onReset={resetAll}
               syncStatus={syncStatus}
+              connected={bound}
               account={account}
               syncBusy={syncBusy}
               onEnableUpload={() => enableSync('upload')}
@@ -874,12 +883,14 @@ const SYNC_UI = {
   error: { label: '동기화 오류 — 잠시 후 재시도', color: 'var(--color-expired-text)', dot: 'var(--color-expired-text)' },
 };
 
-function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remindHour, onToggleNotif, weekStart, onSetWeekStart, onReset, syncStatus, account, syncBusy, onEnableUpload, onEnableCloud, onDisableSync }) {
+function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remindHour, onToggleNotif, weekStart, onSetWeekStart, onReset, syncStatus, connected, account, syncBusy, onEnableUpload, onEnableCloud, onDisableSync }) {
   const full = routines.length >= 5;
   const seg = (on) => ({ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: on ? 800 : 700, cursor: 'pointer', background: on ? 'var(--color-primary)' : 'transparent', color: on ? '#fff' : 'var(--color-muted)' });
   const sectionLabel = { fontSize: 12, fontWeight: 800, color: 'var(--color-muted)', letterSpacing: '0.04em', padding: '0 4px 8px' };
-  const connected = syncStatus !== 'off';
-  const sync = SYNC_UI[syncStatus] ?? SYNC_UI.off;
+  // 연결 여부는 owner 바인딩(connected) 기준. 미연결일 땐 켜기 시도가 실패해(offline/reauth) 상태가
+  // 바뀌어도 시작 버튼을 유지하고, 그 실패는 힌트로만 보인다(#32 Codex P2).
+  const sync = SYNC_UI[connected ? syncStatus : 'off'] ?? SYNC_UI.off;
+  const enableError = !connected && (syncStatus === 'offline' || syncStatus === 'reauth' || syncStatus === 'error') ? SYNC_UI[syncStatus] : null;
   const enableBtn = (on) => ({ cursor: syncBusy ? 'default' : 'pointer', opacity: syncBusy ? 0.6 : 1, padding: '9px 14px', borderRadius: 10, fontSize: 13, fontWeight: 800, background: on ? 'var(--color-primary)' : 'var(--color-bg)', color: on ? '#fff' : 'var(--color-text)', border: on ? 'none' : '1px solid var(--color-border)' });
   return (
     <>
@@ -933,6 +944,9 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
                 <div style={{ fontSize: 12, color: 'var(--color-muted)', margin: '10px 0 12px', lineHeight: 1.5 }}>
                   여러 기기에서 같은 기록을 쓰려면 동기화를 켜세요. 시작 방식을 선택하세요.
                 </div>
+                {enableError && (
+                  <div style={{ fontSize: 12, color: 'var(--color-expired-text)', marginBottom: 10, fontWeight: 700 }}>{enableError.label}</div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <button type="button" disabled={syncBusy} onClick={onEnableUpload} style={enableBtn(true)}>이 기기 데이터로 시작 (클라우드에 올림)</button>
                   <button type="button" disabled={syncBusy} onClick={onEnableCloud} style={enableBtn(false)}>클라우드 데이터로 시작 (이 기기 기록 대체)</button>
