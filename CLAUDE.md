@@ -169,9 +169,24 @@
   `today` 상태는 자정 후 500ms에 갱신되므로 remindHour=0(자정) 발화가 그보다 빨라 전날 수로 알릴 수 있다.
   또 예약 `target` 시각을 보존해 **동결됐던 탭이 뒤늦게 깨어 콜백이 예약 시각을 5분 넘겨 실행되면 발화를
   건너뛴다**(전날 알림이 다음 날 아침에 뜨고 그날 또 뜨는 이중 발화 방지). 알림은 SW `registration.showNotification`(설치 PWA), 없으면
-  `new Notification()`으로. **한계**: 탭이 살아 있어야 동작한다 — 폰 잠금 상태 정시 알림은 **서버
-  Web Push(VAPID+구독 저장+매일 크론)**가 필요하고 #6 2단계다(#7 백엔드 위에 얹는다). `remindHour`는
-  설정의 시각 셀렉트로 편집(0~23), notif/remindHour는 기존대로 영속·동기화된다.
+  `new Notification()`으로. `remindHour`는 설정의 시각 셀렉트로 편집(0~23), notif/remindHour는 기존대로
+  영속·동기화된다. **1단계 한계**: 탭이 살아 있어야 동작한다 → 잠금 화면 알림은 2단계 서버 푸시로.
+- **알림 2단계 — 서버 Web Push**(#6 · 2a PR #35): 앱이 꺼져 있어도 서버가 보낸다. **web-push**(순수 JS,
+  native 아님 → QEMU 무관)를 서버의 **유일한 dep**로 쓰되 **런타임 전용 `push-send.js`에 격리**한다 —
+  루트 vitest·CI가 web-push 설치 없이도 그린이도록(구독 저장 `push-store.js`는 순수·테스트 대상). VAPID 키는
+  compose env(`VAPID_PUBLIC_KEY/PRIVATE_KEY/SUBJECT`), **없으면 푸시 비활성**(구독 저장은 되고 발송만 안 됨,
+  fail-safe — 크래시 아님). 절차는 `deploy/README.md`. 엔드포인트 `GET /api/push/key`·`POST
+  /api/push/{subscribe,unsubscribe,test}`(소유자는 sync와 같은 검증된 `sub`). 구독은 (owner, endpoint) PK로
+  멱등, 410/404 응답이면 `removeEndpoint`로 만료 정리. **endpoint는 알려진 푸시 서비스 호스트(https)로만
+  허용**(`isAllowedPushEndpoint` — fcm.googleapis.com·push.services.mozilla.com·notify.windows.com·push.apple.com):
+  발송 시 서버가 endpoint로 아웃바운드하므로 임의 endpoint를 저장하면 인증 사용자가 내부 주소로 SSRF를
+  만들 수 있다. SW 핸들러(`public/push-sw.js` — push/notificationclick)는
+  generateSW를 injectManifest로 바꾸지 않고 `workbox.importScripts`로 얹는다(PWA 셸 불변). 클라이언트
+  `pushClient.js`가 `/api/push/key`로 공개키를 받아 `pushManager.subscribe` 후 서버 등록 — 설정 "잠금 화면
+  알림"에서 켠다(동기화 연결+권한 전제). **연결 해제(`disableSync`)는 `unsubscribePush`로 서버 행·브라우저
+  구독까지 지운다**(안 하면 다른 기기 발송이 계속 오고 해제 UI도 사라진다). **재키잉도 push_subs를 함께
+  이관**한다(`rekey.js`가 `pushStore.rekeyOwner` 호출 — 안 하면 sub 변경 후 푸시를 못 받는다).
+  **매일 정시 자동 발송(크론·타임존·미완료 판정)은 #6 2b**.
 
 ## 로드맵 단계 메모
 
@@ -184,6 +199,6 @@
   `relay.chillingdaisy.org` DNS 등 소소한 항목이 남아 있다
 - Phase 3: ~~#7 백엔드·계정·클라우드 동기화~~(**완료** · 1/4 스캐폴드 PR #27 · 2/4 저장소 PR #28 ·
   3/4 클라이언트 동기화 엔진 PR #30 · 4/4 활성화·마이그레이션·상태 UI PR #32 — 설정에서 켜면 owner를
-  바인딩해 엔진 활성화) · **#6 알림 진행 중**(1단계 권한+베스트에포트+시각편집 PR #34 — 폰 잠금
-  정시 알림=서버 Web Push는 2단계 후속)
+  바인딩해 엔진 활성화) · **#6 알림 진행 중**(1단계 권한+베스트에포트+시각편집 PR #34 · 2a 서버 Web Push
+  구독·발송 파이프라인 PR #35 — 매일 정시 자동발송 크론=2b 후속)
 - 상시: #8 테스트·접근성·에러 처리·브랜딩

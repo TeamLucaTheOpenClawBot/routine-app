@@ -34,6 +34,9 @@ export default defineConfig({
         // 이미 precache에 추가하므로, 여기서 png/svg/ico를 매칭하면 URL 중복(→ Workbox가 서로 다른
         // revision 충돌로 SW install 거부)이 발생한다. glob은 앱 셸로 한정한다.
         globPatterns: ['**/*.{js,css,html}'],
+        // 생성 SW에 푸시 핸들러를 합친다(#6 2단계) — generateSW를 injectManifest로 바꾸지 않고
+        // push/notificationclick만 얹어 PWA 셸 설정을 그대로 둔다. 파일은 public/push-sw.js.
+        importScripts: ['push-sw.js'],
         navigateFallback: 'index.html',
         // /api/*는 앱 셸로 폴백시키지 않는다(#7). 이게 없으면 동기화 요청이 오프라인·SW 경유 시
         // index.html을 받아 클라이언트가 HTML을 JSON으로 파싱하려 들고, 실패가 '동기화 오류'로

@@ -1,12 +1,14 @@
-# 동기화 API — 의존성이 0개라 install 스테이지도, node_modules도 없다.
-# 그래서 이 이미지는 소스를 복사만 하면 되고, 멀티아치 빌드가 QEMU에서 아무것도 컴파일하지 않는다
-# (native 모듈을 쓰면 node_modules가 타깃 아키텍처로 빌드돼야 해서 #20에서 없앤 QEMU 경로가 되살아난다).
+# 동기화·푸시 API. 의존성은 **web-push 하나**(#6 2단계) — 순수 JS라 native 컴파일이 없어
+# 멀티아치 빌드가 QEMU에서 아무것도 빌드하지 않는다(#20에서 없앤 QEMU 경로를 되살리지 않는다).
+# node:sqlite는 여전히 내장 모듈이라 install이 필요 없다.
 FROM node:24-alpine
 
 ENV NODE_ENV=production
 WORKDIR /app
 
-COPY package.json ./
+# lockfile 기준으로 정확히 설치(--omit=dev). 순수 JS라 arch별 빌드가 없다.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 COPY src ./src
 
 # SQLite 파일이 놓일 자리. **USER 전환 전에** 만들고 소유권을 넘긴다 —

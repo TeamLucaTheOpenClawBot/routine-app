@@ -9,5 +9,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "DEV_NO_AUTH=1 node --watch src/index.js"
+  },
+  "dependencies": {
+    "web-push": "^3.6.7"
   }
 }
