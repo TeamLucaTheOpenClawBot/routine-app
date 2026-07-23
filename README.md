@@ -58,16 +58,22 @@ src/
   App.jsx          앱 셸 · 탭바 · 4개 화면 · 체크 시트 · 편집 폼 · 온보딩 · 동기화 배선
   appLogic.js      데이터 모델 · 주간 판정 · 찬스 · 통계 · 영속화 · 동기화 순수 로직
   syncClient.js    동기화 HTTP 왕복(postSync/getMe) — 응답 분류
+  pushClient.js    Web Push 구독/해제 — /api/push 왕복(+ pushClient.test.js)
+  ErrorBoundary.jsx  렌더 오류 시 하얀 화면 대신 복구 안내(+ ErrorBoundary.test.jsx)
   appLogic.test.js · sync.test.js · syncClient.test.js   순수 로직 단위 테스트
-  App.test.jsx     App 구동 · 영속화 통합 테스트
+  App.test.jsx     App 구동 · 상호작용 · 영속화 통합 테스트
   index.css        다크 테마 디자인 토큰 · 전역 스타일
-  main.jsx         엔트리
+  main.jsx         엔트리 — <ErrorBoundary>로 App을 감싼다
 server/            동기화·푸시 API — native 의존성 0(순수 JS web-push 하나), Cloudflare Access JWT 검증
-  src/index.js     HTTP 핸들러(POST /api/sync · GET /api/me · 헬스체크)
+  src/index.js     HTTP 핸들러(POST /api/sync · GET /api/me · POST /api/push/{subscribe,unsubscribe,test} · GET /api/push/key · 헬스체크)
   src/store.js     SQLite(node:sqlite) 셀 단위 merge 저장소(+ store.test.js)
   src/access.js    Access JWT 검증(RS256 고정 · aud/iss)(+ access.test.js)
+  src/push-store.js  구독 저장(SQLite) · 만료 정리 · 재키잉(+ push-store.test.js)
+  src/push-send.js   web-push 발송(런타임 전용, VAPID) — 루트 vitest 격리
+  src/reminders.js   리마인더 판정 순수 로직(로컬시각·미완료·정각창)(+ reminders.test.js)
+  src/cron.js      매일 정시 리마인더 틱(setInterval)(+ cron.test.js)
   src/rekey.js     소유자 키 이관(IdP 변경 복구)
-public/            PWA 아이콘(logo.svg 소스 · pwa-*/maskable/apple-touch/favicon)
+public/            PWA 아이콘(logo.svg 소스 · pwa-*/maskable/apple-touch/favicon) · push-sw.js
 vite.config.js     Vite · vitest · vite-plugin-pwa(매니페스트·SW) 설정
 design_handoff_routine_tracker/   디자인 핸드오프 스펙 (참고용)
 ```
