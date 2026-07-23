@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import App from './App';
 import { STORAGE_KEY, serializeState } from './appLogic';
@@ -243,5 +243,183 @@ describe('모달 접근성 (#8)', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: '루틴 편집' })).not.toBeInTheDocument();
+  });
+});
+
+describe('탭 전환 (#8)', () => {
+  // 탭 버튼은 접근성 이름(= 라벨 텍스트)으로 잡는다 — 각 화면 헤딩(div)과 겹치지 않는다.
+  const tab = (name) => screen.getByRole('button', { name });
+
+  it('네 탭 사이를 오가며 각 화면을 보여준다', () => {
+    render(<App />);
+    // 기본은 '오늘' — 루틴별 주간 진행 텍스트(루틴마다 하나)가 이 화면에만 있다.
+    expect(screen.getAllByText(/이번 주 \d/).length).toBeGreaterThan(0);
+
+    fireEvent.click(tab('통계'));
+    expect(screen.getByText('평균 달성률')).toBeInTheDocument();
+    expect(screen.queryByText(/이번 주 \d/)).not.toBeInTheDocument();
+
+    fireEvent.click(tab('설정'));
+    expect(screen.getByText('데이터 초기화')).toBeInTheDocument();
+    expect(screen.queryByText('평균 달성률')).not.toBeInTheDocument();
+
+    fireEvent.click(tab('캘린더'));
+    const now = new Date();
+    expect(screen.getByText(`${now.getFullYear()}년 ${now.getMonth() + 1}월`)).toBeInTheDocument();
+
+    fireEvent.click(tab('오늘'));
+    expect(screen.getAllByText(/이번 주 \d/).length).toBeGreaterThan(0);
+  });
+});
+
+describe('루틴 추가·편집·삭제 (#8)', () => {
+  const goSettings = () => fireEvent.click(screen.getByRole('button', { name: '설정' }));
+
+  it('설정에서 루틴을 추가하면 이름을 바꿔 저장하고 목록·새로고침에 남는다', () => {
+    const first = render(<App />);
+    goSettings();
+    // 기본 2개 → 추가 버튼은 "루틴 추가 (2/5)"
+    fireEvent.click(screen.getByText(/루틴 추가/));
+    expect(screen.getByRole('dialog', { name: '루틴 추가' })).toBeInTheDocument();
+
+    // 새 루틴 기본 이름 '새 루틴' → '명상'으로 변경 후 저장
+    fireEvent.change(screen.getByDisplayValue('새 루틴'), { target: { value: '명상' } });
+    fireEvent.click(screen.getByText('저장'));
+
+    expect(screen.queryByRole('dialog', { name: '루틴 추가' })).not.toBeInTheDocument();
+    expect(screen.getByText('명상')).toBeInTheDocument();
+
+    // 새로고침(재마운트) 후에도 유지된다
+    first.unmount();
+    cleanup();
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    expect(screen.getByText('명상')).toBeInTheDocument();
+  });
+
+  it('추가 폼을 취소하면 임시 루틴이 목록에 남지 않는다', () => {
+    render(<App />);
+    goSettings();
+    fireEvent.click(screen.getByText(/루틴 추가/));
+    fireEvent.change(screen.getByDisplayValue('새 루틴'), { target: { value: '버릴루틴' } });
+    fireEvent.click(screen.getByText('취소'));
+
+    expect(screen.queryByRole('dialog', { name: '루틴 추가' })).not.toBeInTheDocument();
+    expect(screen.queryByText('버릴루틴')).not.toBeInTheDocument();
+    // 기본 2개는 그대로
+    expect(screen.getByText('운동')).toBeInTheDocument();
+    expect(screen.getByText('음주')).toBeInTheDocument();
+  });
+
+  it('루틴이 5개면 추가 버튼이 비활성화된다', () => {
+    const routines = Array.from({ length: 5 }, (_, i) => ({
+      id: `r${i + 1}`, name: `루틴${i + 1}`, iconKey: 'activity', color: `#00000${i}`, goalType: 'atLeast', goalCount: 3, visible: true,
+    }));
+    localStorage.setItem(STORAGE_KEY, serializeState({ routines, checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 }));
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    expect(screen.getByText(/루틴 추가/).closest('button')).toBeDisabled();
+  });
+
+  it('편집 폼에서 이름을 바꾸면 반영된다', () => {
+    localStorage.setItem(STORAGE_KEY, serializeState({ routines: [routine], checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 }));
+    render(<App />);
+    goSettings();
+    fireEvent.click(screen.getByText('운동')); // 설정 루틴 행 → 편집
+    fireEvent.change(screen.getByDisplayValue('운동'), { target: { value: '헬스' } });
+    fireEvent.click(screen.getByText('저장'));
+
+    expect(screen.getByText('헬스')).toBeInTheDocument();
+    expect(screen.queryByText('운동')).not.toBeInTheDocument();
+  });
+
+  it('편집 폼에서 루틴을 삭제하면 목록에서 사라지고 다른 루틴은 남는다', () => {
+    // 운동에 체크 하나 — 삭제 시 함께 정리되지만, 여기선 목록 제거를 확인한다.
+    const key = (d) => `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+    const today = key(new Date());
+    localStorage.setItem(STORAGE_KEY, serializeState({
+      routines: [
+        { id: 'r1', name: '운동', iconKey: 'activity', color: '#0EA5A4', goalType: 'atLeast', goalCount: 7, visible: true },
+        { id: 'r2', name: '음주', iconKey: 'beer', color: '#E11D48', goalType: 'atMost', goalCount: 1, visible: true },
+      ],
+      checks: { [today]: { r1: true } },
+      bonusChances: {},
+      weekStart: 0, notif: true, remindHour: 21,
+    }));
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    fireEvent.click(screen.getByText('운동'));
+    fireEvent.click(screen.getByText('루틴 삭제'));
+
+    expect(screen.queryByRole('dialog', { name: '루틴 편집' })).not.toBeInTheDocument();
+    expect(screen.queryByText('운동')).not.toBeInTheDocument();
+    expect(screen.getByText('음주')).toBeInTheDocument();
+  });
+});
+
+describe('루틴 표시/숨김 (#8)', () => {
+  it('설정에서 숨기면 오늘 화면에서 사라지고 다시 표시하면 돌아온다', () => {
+    render(<App />); // 기본 운동·음주(둘 다 표시)
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+
+    // 첫 행(운동)의 표시 토글 → 숨김
+    const toggles = screen.getAllByText('표시');
+    fireEvent.click(toggles[0]);
+    expect(screen.getAllByText('숨김').length).toBeGreaterThan(0);
+
+    // 오늘 화면엔 운동이 안 보이고 음주만 보인다
+    fireEvent.click(screen.getByRole('button', { name: '오늘' }));
+    expect(screen.queryByText('운동')).not.toBeInTheDocument();
+    expect(screen.getByText('음주')).toBeInTheDocument();
+
+    // 다시 표시로 돌리면 오늘 화면에 복귀
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    fireEvent.click(screen.getByText('숨김'));
+    fireEvent.click(screen.getByRole('button', { name: '오늘' }));
+    expect(screen.getByText('운동')).toBeInTheDocument();
+  });
+});
+
+describe('데이터 초기화 (#8)', () => {
+  let confirmSpy;
+  afterEach(() => {
+    if (confirmSpy) confirmSpy.mockRestore();
+    confirmSpy = undefined;
+  });
+
+  it('확인하면 추가한 루틴이 지워지고 기본 상태로 되돌아간다', () => {
+    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    localStorage.setItem(STORAGE_KEY, serializeState({
+      routines: [
+        { id: 'r1', name: '운동', iconKey: 'activity', color: '#0EA5A4', goalType: 'atLeast', goalCount: 6, visible: true },
+        { id: 'r2', name: '음주', iconKey: 'beer', color: '#E11D48', goalType: 'atMost', goalCount: 1, visible: true },
+        { id: 'r3', name: '명상', iconKey: 'leaf', color: '#8B5CF6', goalType: 'atLeast', goalCount: 3, visible: true },
+      ],
+      checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21,
+    }));
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    expect(screen.getByText('명상')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('초기화'));
+    // 기본 루틴만 남는다
+    expect(screen.queryByText('명상')).not.toBeInTheDocument();
+    expect(screen.getByText('운동')).toBeInTheDocument();
+    expect(screen.getByText('음주')).toBeInTheDocument();
+  });
+
+  it('취소하면 아무것도 지우지 않는다', () => {
+    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    localStorage.setItem(STORAGE_KEY, serializeState({
+      routines: [
+        { id: 'r1', name: '운동', iconKey: 'activity', color: '#0EA5A4', goalType: 'atLeast', goalCount: 6, visible: true },
+        { id: 'r3', name: '명상', iconKey: 'leaf', color: '#8B5CF6', goalType: 'atLeast', goalCount: 3, visible: true },
+      ],
+      checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21,
+    }));
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    fireEvent.click(screen.getByText('초기화'));
+    expect(screen.getByText('명상')).toBeInTheDocument();
   });
 });
