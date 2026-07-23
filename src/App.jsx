@@ -855,7 +855,7 @@ function App() {
           {TABS.map((tab) => {
             const on = tab.key === activeTab;
             return (
-              <button key={tab.key} type="button" onClick={() => selectTab(tab.key)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, cursor: 'pointer', padding: '2px 0' }}>
+              <button key={tab.key} type="button" onClick={() => selectTab(tab.key)} aria-current={on ? 'page' : undefined} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, cursor: 'pointer', padding: '2px 0' }}>
                 <Icon name={tab.icon} size={23} color={on ? '#0EA5A4' : '#94A3B8'} strokeWidth={on ? 2.3 : 2} />
                 <span style={{ fontSize: 10.5, fontWeight: on ? 800 : 600, color: on ? 'var(--color-primary)' : '#94A3B8' }}>{tab.label}</span>
               </button>
@@ -965,8 +965,9 @@ function CalendarScreen({ weeks, weekStart, monthTitle, statText, onAdd, onOpenD
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
               {week.days.map((day) => {
                 const wc = weekendColor(day.dow);
+                const [, mm, dd] = day.key.split('-');
                 return (
-                  <div key={day.key} onClick={day.isFuture ? undefined : () => onOpenDay(day.key)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, padding: '4px 0 6px', borderRadius: 10, cursor: day.isFuture ? 'default' : 'pointer', background: day.isToday ? 'var(--color-primary-50)' : 'transparent' }}>
+                  <button key={day.key} type="button" disabled={day.isFuture} onClick={day.isFuture ? undefined : () => onOpenDay(day.key)} aria-label={`${Number(mm)}월 ${Number(dd)}일 체크 보기`} style={{ font: 'inherit', border: 'none', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, padding: '4px 0 6px', borderRadius: 10, cursor: day.isFuture ? 'default' : 'pointer', background: day.isToday ? 'var(--color-primary-50)' : 'transparent' }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: day.isFuture ? 'var(--color-field-border)' : wc || 'var(--color-muted)', marginBottom: 1 }}>{WEEKDAYS[day.dow]}</span>
                     <div style={{ width: 22, height: 22, borderRadius: '50%', background: day.isToday ? 'var(--color-primary)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '1px 0' }}>
                       <span style={{ fontSize: day.isToday ? 12 : 12.5, fontWeight: day.isToday ? 800 : 700, color: day.isToday ? '#fff' : day.isFuture ? 'var(--color-field-border)' : wc || 'var(--color-text)' }}>{day.dateNum}</span>
@@ -984,7 +985,7 @@ function CalendarScreen({ weeks, weekStart, monthTitle, statText, onAdd, onOpenD
                         ))}
                       </div>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -1016,7 +1017,7 @@ function TodayScreen({ today, rows, doneN, total, pct, onToggle }) {
       </div>
       <div style={{ padding: '4px 16px 24px', display: 'flex', flexDirection: 'column', gap: 11 }}>
         {rows.map(({ routine, state, done, prog, chances }) => (
-          <div key={routine.id} onClick={() => onToggle(routine.id)} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 15px', borderRadius: 18, border: '1px solid var(--color-border)', background: state === 'chance' ? 'var(--color-chance-50)' : done ? rgba(routine.color, 0.07) : 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', cursor: 'pointer' }}>
+          <button key={routine.id} type="button" onClick={() => onToggle(routine.id)} style={{ width: '100%', textAlign: 'left', font: 'inherit', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 15px', borderRadius: 18, border: '1px solid var(--color-border)', background: state === 'chance' ? 'var(--color-chance-50)' : done ? rgba(routine.color, 0.07) : 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', cursor: 'pointer' }}>
             <div style={{ width: 48, height: 48, borderRadius: 14, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: rgba(routine.color, done ? 0.16 : 0.1) }}>
               <Icon name={routine.iconKey} size={26} color={routine.color} strokeWidth={2} />
             </div>
@@ -1026,7 +1027,7 @@ function TodayScreen({ today, rows, doneN, total, pct, onToggle }) {
               <ChanceBadge chances={chances} />
             </div>
             <CheckMark state={state} size={30} tick={16} />
-          </div>
+          </button>
         ))}
       </div>
     </>
@@ -1116,12 +1117,12 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
                 <div style={{ width: 40, height: 40, borderRadius: 12, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: rgba(routine.color, routine.visible ? 0.15 : 0.08) }}>
                   <Icon name={routine.iconKey} size={22} color={routine.visible ? routine.color : '#94A3B8'} strokeWidth={2} />
                 </div>
-                <div onClick={() => onEdit(routine.id)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+                <button type="button" onClick={() => onEdit(routine.id)} style={{ flex: 1, minWidth: 0, textAlign: 'left', font: 'inherit', border: 'none', background: 'transparent', cursor: 'pointer', padding: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700 }}>{routine.name}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--color-muted)', marginTop: 1 }}>{goalText(routine)}</div>
-                </div>
-                <button type="button" onClick={() => onToggleVisible(routine.id)} style={{ cursor: 'pointer', padding: '6px 11px', borderRadius: 9, fontSize: 12, fontWeight: 700, background: routine.visible ? 'var(--color-primary-50)' : 'var(--color-bg)', color: routine.visible ? 'var(--color-primary)' : 'var(--color-muted)' }}>{routine.visible ? '표시' : '숨김'}</button>
-                <button type="button" onClick={() => onEdit(routine.id)} style={{ cursor: 'pointer', flex: '0 0 auto', display: 'flex' }}>
+                </button>
+                <button type="button" aria-label={`${routine.name} ${routine.visible ? '숨기기' : '표시하기'}`} onClick={() => onToggleVisible(routine.id)} style={{ cursor: 'pointer', padding: '6px 11px', borderRadius: 9, fontSize: 12, fontWeight: 700, background: routine.visible ? 'var(--color-primary-50)' : 'var(--color-bg)', color: routine.visible ? 'var(--color-primary)' : 'var(--color-muted)' }}>{routine.visible ? '표시' : '숨김'}</button>
+                <button type="button" aria-label={`${routine.name} 편집`} onClick={() => onEdit(routine.id)} style={{ cursor: 'pointer', flex: '0 0 auto', display: 'flex' }}>
                   <Icon name="chevron" size={18} color="var(--color-field-border)" strokeWidth={2.4} />
                 </button>
               </div>
@@ -1270,7 +1271,7 @@ function CheckSheet({ dayKey, routines, checks, onToggle, onClose }) {
             const state = checkState(checks, dayKey, routine.id);
             const done = state !== 'none';
             return (
-              <div key={routine.id} onClick={() => onToggle(dayKey, routine.id)} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 13px', borderRadius: 16, border: '1px solid var(--color-border)', background: state === 'chance' ? 'var(--color-chance-50)' : done ? rgba(routine.color, 0.07) : 'var(--color-surface)', cursor: 'pointer' }}>
+              <button key={routine.id} type="button" onClick={() => onToggle(dayKey, routine.id)} style={{ width: '100%', textAlign: 'left', font: 'inherit', display: 'flex', alignItems: 'center', gap: 13, padding: '12px 13px', borderRadius: 16, border: '1px solid var(--color-border)', background: state === 'chance' ? 'var(--color-chance-50)' : done ? rgba(routine.color, 0.07) : 'var(--color-surface)', cursor: 'pointer' }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: rgba(routine.color, done ? 0.16 : 0.1) }}>
                   <Icon name={routine.iconKey} size={22} color={routine.color} strokeWidth={2} />
                 </div>
@@ -1279,7 +1280,7 @@ function CheckSheet({ dayKey, routines, checks, onToggle, onClose }) {
                   <div style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 1 }}>{goalText(routine)}</div>
                 </div>
                 <CheckMark state={state} size={30} tick={15} />
-              </div>
+              </button>
             );
           })}
         </div>

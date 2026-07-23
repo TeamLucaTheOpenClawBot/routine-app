@@ -246,6 +246,45 @@ describe('모달 접근성 (#8)', () => {
   });
 });
 
+describe('접근성 — 키보드 조작·ARIA (#8)', () => {
+  it('활성 탭에 aria-current="page"가 붙고 전환 시 이동한다', () => {
+    render(<App />);
+    // 기본 활성 탭은 '오늘'
+    expect(screen.getByRole('button', { name: '오늘' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '통계' })).not.toHaveAttribute('aria-current');
+
+    fireEvent.click(screen.getByRole('button', { name: '통계' }));
+    expect(screen.getByRole('button', { name: '통계' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '오늘' })).not.toHaveAttribute('aria-current');
+  });
+
+  it('오늘 루틴 토글이 div가 아닌 button이라 키보드로 조작된다', () => {
+    render(<App />);
+    // 접근성 이름에 루틴명이 포함된 실제 <button> — 포커스·Enter/Space로 네이티브 조작 가능
+    const row = screen.getByRole('button', { name: /운동/ });
+    expect(row.tagName).toBe('BUTTON');
+    // 클릭(=키보드 활성화와 동일 핸들러)으로 체크가 토글된다
+    fireEvent.click(row);
+    expect(screen.getByLabelText('완료')).toBeInTheDocument();
+  });
+
+  it('캘린더 날짜 셀이 button이고 라벨로 날짜를 안내한다', () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '캘린더' }));
+    const dayButtons = screen.getAllByRole('button', { name: /체크 보기$/ });
+    expect(dayButtons.length).toBeGreaterThan(0);
+  });
+
+  it('설정 루틴 행의 아이콘 버튼에 접근성 라벨이 있다', () => {
+    localStorage.setItem(STORAGE_KEY, serializeState({ routines: [routine], checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 }));
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '설정' }));
+    // 아이콘만 있는 편집/표시 버튼도 이름을 갖는다(WCAG 4.1.2)
+    expect(screen.getByRole('button', { name: '운동 편집' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '운동 숨기기' })).toBeInTheDocument();
+  });
+});
+
 describe('탭 전환 (#8)', () => {
   // 탭 버튼은 접근성 이름(= 라벨 텍스트)으로 잡는다 — 각 화면 헤딩(div)과 겹치지 않는다.
   const tab = (name) => screen.getByRole('button', { name });
