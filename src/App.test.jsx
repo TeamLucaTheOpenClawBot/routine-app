@@ -49,6 +49,55 @@ describe('App persistence (#2)', () => {
   });
 });
 
+describe('App 지킴 — 줄이기 루틴 4-상태 (#46)', () => {
+  const beer = { id: 'r2', name: '음주', iconKey: 'beer', color: '#E11D48', goalType: 'atMost', goalCount: 1, visible: true };
+  const seed = (checks = {}) =>
+    localStorage.setItem(STORAGE_KEY, serializeState({ routines: [beer], checks, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 }));
+
+  it('첫 탭이 지킴이고, 한 번 더 탭해야 함으로 집계된다', () => {
+    seed();
+    render(<App />);
+
+    expect(screen.getByLabelText('기록 없음')).toBeInTheDocument();
+    expect(screen.getByText('이번 주 0회 · 한도 1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('음주')); // → 지킴 (집계 0회 유지)
+    expect(screen.getByLabelText('지킴')).toBeInTheDocument();
+    expect(screen.getByText('이번 주 0회 · 한도 1 · 오늘 지킴')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('음주')); // → 함 (+1)
+    expect(screen.getByLabelText('함')).toBeInTheDocument();
+    expect(screen.getByText('이번 주 1회 · 한도 1 · 오늘 함')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('음주')); // → 찬스 (atMost라 카운트 제외)
+    expect(screen.getByLabelText('찬스로 킵함')).toBeInTheDocument();
+    expect(screen.getByText('이번 주 0회 · 한도 1 · 오늘 찬스로 킵함')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('음주')); // → 안함
+    expect(screen.getByLabelText('기록 없음')).toBeInTheDocument();
+  });
+
+  it('지킴은 오늘 진행률에서 완료로 센다 — 안 마신 날도 하루를 마감할 수 있다', () => {
+    seed();
+    render(<App />);
+    expect(screen.getByText('0')).toBeInTheDocument(); // 진행 링 0/1
+
+    fireEvent.click(screen.getByText('음주'));
+    expect(screen.getByText('1')).toBeInTheDocument(); // 지킴 → 1/1 완료
+  });
+
+  it('지킴은 새로고침 후에도 남는다', () => {
+    seed();
+    const first = render(<App />);
+    fireEvent.click(screen.getByText('음주'));
+    first.unmount();
+    cleanup();
+
+    render(<App />);
+    expect(screen.getByLabelText('지킴')).toBeInTheDocument();
+  });
+});
+
 describe('App 찬스 3-상태 (#16)', () => {
   // atLeast 루틴: 안함 → 했음(+1) → 찬스(여전히 +1, 출처는 주찬스) → 안함(0)
   it('탭할 때마다 안함 → 했음 → 찬스 → 안함으로 순환한다', () => {

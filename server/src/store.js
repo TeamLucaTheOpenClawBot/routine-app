@@ -233,7 +233,7 @@ export function createStore(db) {
       }
     },
 
-    // 그 날짜에 **처리된(non-null 셀)** 루틴 id 목록 — 했음·찬스 모두 포함(툼스톤 제외).
+    // 그 날짜에 **처리된(non-null 셀)** 루틴 id 목록 — 했음·지킴·찬스 모두 포함(툼스톤 제외).
     checkedRoutineIds(owner, dateKey) {
       return checkedStmt.all(owner, dateKey).map((r) => r.routine_id);
     },
