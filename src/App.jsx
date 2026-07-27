@@ -694,7 +694,9 @@ function App() {
       summary: [
         { label: '이번 주 달성', value: `${meet}/${visibleRoutines.length}`, accent: 'var(--color-primary)' },
         { label: '최고 연속', value: `${bestStreak}주`, accent: '#22C55E' },
-        { label: '평균 달성률', value: `${avg}%`, accent: '#60A5FA' },
+        // 판정된 주가 있는 루틴이 하나도 없으면 요약도 '—'다 — 루틴 카드가 '—'인데 요약만 0%면
+        // 첫 설치·미기록 상태가 "0% 실패"로 읽힌다(카드와 같은 규칙을 요약에도 적용).
+        { label: '평균 달성률', value: rated.length ? `${avg}%` : '—', accent: '#60A5FA' },
       ],
     };
   }, [checks, currentWeekStart, visibleRoutines, weekStart, today]);
