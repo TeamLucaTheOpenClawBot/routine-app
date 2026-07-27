@@ -17,7 +17,9 @@ import {
   finalizedResults,
   formatDateKey,
   goalText,
+  judgedWeeks,
   loadState,
+  weekHasRecord,
   makeNewRoutine,
   monthlyChanceLeft,
   nextBonusId,
@@ -160,9 +162,56 @@ describe('stats helpers', () => {
   it('only evaluates finalized (past) weeks', () => {
     const routine = { id: 'r1', goalType: 'atLeast', goalCount: 1 };
     const results = finalizedResults(routine, {}, 0, TODAY);
-    // 과거 8주만 완료됨(이번 주/미래 2주 제외).
+    // 과거 8주만 완료됨(이번 주/미래 2주 제외). 기록이 없으므로 전부 판정 불가(null).
     expect(results.length).toBe(8);
-    expect(results.every((r) => r === false)).toBe(true);
+    expect(results.every((r) => r === null)).toBe(true);
+  });
+});
+
+// 기록이 없는 주는 판정하지 않는다 — 줄이기 루틴에서 빈 주가 0회라 저절로 달성이 되던 것
+// (앱을 깔기 전 주까지 "연속 8주"로 세던 문제) 때문이다.
+describe('통계 — 기록 없는 주는 판정하지 않는다', () => {
+  const BEER_R = { id: 'r2', goalType: 'atMost', goalCount: 1 };
+  const wk = (n) => formatDateKey(new Date(2026, 6, 12 - n * 7 + 1)); // n주 전 주의 월요일
+
+  it('빈 주는 줄이기 루틴에서도 달성으로 세지 않는다', () => {
+    const empty = finalizedResults(BEER_R, {}, 0, TODAY);
+    expect(judgedWeeks(empty)).toBe(0);
+    expect(currentStreak(empty)).toBe(0);
+    expect(achievementRate(empty)).toBe(0);
+  });
+
+  it('기록이 있는 주만 세고, 그 사이 빈 주에서 연속이 끊긴다', () => {
+    // 1·2주 전은 지킴 기록(달성), 3주 전은 기록 없음 → 연속은 2에서 멈춘다.
+    const checks = {
+      [wk(1)]: { r2: CHECK_KEPT },
+      [wk(2)]: { r2: CHECK_KEPT },
+      [wk(4)]: { r2: true }, // 4주 전은 한 번 마심 — 한도 1이라 여전히 달성
+    };
+    const results = finalizedResults(BEER_R, checks, 0, TODAY);
+    expect(judgedWeeks(results)).toBe(3);
+    expect(currentStreak(results)).toBe(2);
+    expect(achievementRate(results)).toBe(100); // 판정된 3주가 분모 — 빈 주는 빠진다
+  });
+
+  it('못 지킨 주는 그대로 실패로 센다', () => {
+    const checks = {
+      [wk(1)]: { r2: true },
+      [formatDateKey(new Date(2026, 6, 12 - 7 + 2))]: { r2: true }, // 같은 주 이틀 → 2회 > 한도 1
+    };
+    const results = finalizedResults(BEER_R, checks, 0, TODAY);
+    expect(judgedWeeks(results)).toBe(1);
+    expect(currentStreak(results)).toBe(0);
+    expect(achievementRate(results)).toBe(0);
+  });
+
+  it('weekHasRecord는 값 종류를 가리지 않는다(했음·지킴·찬스)', () => {
+    const ws = new Date(2026, 6, 12);
+    expect(weekHasRecord(ws, 'r2', { '2026-07-14': { r2: true } })).toBe(true);
+    expect(weekHasRecord(ws, 'r2', { '2026-07-14': { r2: CHECK_KEPT } })).toBe(true);
+    expect(weekHasRecord(ws, 'r2', { '2026-07-14': { r2: { chance: 'weekly' } } })).toBe(true);
+    expect(weekHasRecord(ws, 'r2', { '2026-07-14': { r1: true } })).toBe(false); // 다른 루틴
+    expect(weekHasRecord(ws, 'r2', { '2026-07-19': { r2: true } })).toBe(false); // 다음 주
   });
 });
 

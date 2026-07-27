@@ -26,6 +26,7 @@ import {
   checkLabel,
   chanceSummary,
   finalizedResults,
+  judgedWeeks,
   achievementRate,
   currentStreak,
   loadState,
@@ -673,6 +674,7 @@ function App() {
       const results = finalizedResults(routine, checks, weekStart, today);
       return {
         routine,
+        judged: judgedWeeks(results), // 0이면 아직 낼 통계가 없다 — 0%로 보여주면 실패처럼 읽힌다
         pct: achievementRate(results),
         streak: currentStreak(results),
         heat: results.slice(-10),
@@ -683,7 +685,10 @@ function App() {
       if (achieved(routine, weekCount(currentWeekStart, routine, checks))) meet += 1;
     });
     const bestStreak = perRoutine.reduce((m, x) => Math.max(m, x.streak), 0);
-    const avg = perRoutine.length ? Math.round(perRoutine.reduce((s, x) => s + x.pct, 0) / perRoutine.length) : 0;
+    // 평균 달성률도 **판정된 주가 있는 루틴만** 평균낸다 — 기록이 없어 0%인 루틴을 섞으면
+    // 평균이 실제보다 낮게 나온다(방금 추가한 루틴이 전체 통계를 끌어내리는 착시).
+    const rated = perRoutine.filter((x) => x.judged > 0);
+    const avg = rated.length ? Math.round(rated.reduce((s, x) => s + x.pct, 0) / rated.length) : 0;
     return {
       perRoutine,
       summary: [
@@ -1057,7 +1062,7 @@ function StatsScreen({ summary, rows }) {
         ))}
       </div>
       <div style={{ padding: '8px 16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {rows.map(({ routine, pct, streak, heat }) => (
+        {rows.map(({ routine, judged, pct, streak, heat }) => (
           <div key={routine.id} style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 18, padding: '14px 15px', boxShadow: 'var(--shadow-sm)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
               <div style={{ width: 36, height: 36, borderRadius: 11, flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: rgba(routine.color, 0.15) }}>
@@ -1068,18 +1073,26 @@ function StatsScreen({ summary, rows }) {
                 <div style={{ fontSize: 11.5, color: 'var(--color-muted)', marginTop: 1 }}>{goalText(routine)}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: routine.color }}>{pct}%</div>
-                <div style={{ fontSize: 11, color: 'var(--color-muted)', marginTop: 1 }}>연속 {streak}주</div>
+                {/* 판정된 주가 없으면 0%가 아니라 '—' — 기록이 없는 것과 못 지킨 것은 다르다 */}
+                <div style={{ fontSize: 18, fontWeight: 800, color: judged ? routine.color : 'var(--color-field-border)' }}>{judged ? `${pct}%` : '—'}</div>
+                <div style={{ fontSize: 11, color: 'var(--color-muted)', marginTop: 1 }}>
+                  {judged ? `연속 ${streak}주 · ${judged}주 기록` : '기록 없음'}
+                </div>
               </div>
             </div>
             <div style={{ height: 8, borderRadius: 999, background: 'var(--color-bg)', overflow: 'hidden', margin: '11px 0 12px' }}>
-              <div style={{ height: '100%', width: `${pct}%`, background: routine.color, borderRadius: 999 }} />
+              <div style={{ height: '100%', width: `${judged ? pct : 0}%`, background: routine.color, borderRadius: 999 }} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 10.5, color: 'var(--color-muted)', fontWeight: 700, flex: '0 0 auto' }}>최근</span>
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {/* 3-상태: 달성(루틴 색) · 미달성(채운 회색) · 기록 없음(테두리만) */}
                 {heat.map((ok, i) => (
-                  <div key={i} style={{ width: 13, height: 13, borderRadius: 4, flex: '0 0 auto', background: ok ? routine.color : HEAT_EMPTY }} />
+                  <div
+                    key={i}
+                    title={ok === null ? '기록 없음' : ok ? '달성' : '미달성'}
+                    style={{ width: 13, height: 13, borderRadius: 4, flex: '0 0 auto', background: ok === null ? 'transparent' : ok ? routine.color : HEAT_EMPTY, border: ok === null ? '1px solid var(--color-border)' : 'none' }}
+                  />
                 ))}
               </div>
             </div>
