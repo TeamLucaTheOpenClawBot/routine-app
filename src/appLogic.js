@@ -337,6 +337,23 @@ export function currentStreak(results) {
   return streak;
 }
 
+// 값이 그대로인 항목은 **지난 렌더의 객체를 그대로 돌려준다**(참조 유지). React.memo는 참조로
+// 판정하므로, 매번 새 객체를 만들면 memo가 뚫려 큰 목록이 통째로 다시 그려진다 — 캘린더는 주 카드
+// 하나당 아이콘이 수십 개라 체크 하나 바꿀 때마다 전부 다시 그리면 눈에 띄게 느리다(#8 측정:
+// 시트에서 토글 10.0ms → 4.1ms). cache는 호출자가 들고 있는 Map(key → {signature, value})이고,
+// 이번에 안 쓰인 키는 지워 무한히 쌓이지 않게 한다.
+export function reuseUnchanged(cache, entries) {
+  const out = entries.map(({ key, signature, value }) => {
+    const hit = cache.get(key);
+    if (hit && hit.signature === signature) return hit.value;
+    cache.set(key, { signature, value });
+    return value;
+  });
+  const live = new Set(entries.map((e) => e.key));
+  for (const key of cache.keys()) if (!live.has(key)) cache.delete(key);
+  return out;
+}
+
 // 설정 화면에 Access 로그인 링크를 보여야 하는가(#51). 미연결(아직 못 켬)일 때뿐 아니라
 // **연결된 뒤 세션이 만료된 reauth 상태에서도** 보여야 한다 — 그때 링크가 없으면 사용자에게 남는
 // 선택지가 '연결 해제'뿐인데, 그건 밀지 못한 outbox·커서를 버려 미동기화 편집을 잃게 만든다.

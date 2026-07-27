@@ -29,6 +29,7 @@ import {
   purgeRoutineBonuses,
   purgeRoutineChecks,
   rangeStart,
+  reuseUnchanged,
   saveState,
   serializeState,
   showsLoginLink,
@@ -213,6 +214,36 @@ describe('통계 — 기록 없는 주는 판정하지 않는다', () => {
     expect(weekHasRecord(ws, 'r2', { '2026-07-14': { r2: { chance: 'weekly' } } })).toBe(true);
     expect(weekHasRecord(ws, 'r2', { '2026-07-14': { r1: true } })).toBe(false); // 다른 루틴
     expect(weekHasRecord(ws, 'r2', { '2026-07-19': { r2: true } })).toBe(false); // 다음 주
+  });
+});
+
+// React.memo는 참조로 판정하므로 "값이 같으면 같은 객체"를 지켜야 큰 목록이 헛되이 다시 그려지지 않는다(#8).
+describe('reuseUnchanged — 값이 같으면 참조를 유지한다', () => {
+  const entry = (key, signature) => ({ key, signature, value: { key, signature } });
+
+  it('시그니처가 같으면 지난 객체를 그대로 돌려준다', () => {
+    const cache = new Map();
+    const first = reuseUnchanged(cache, [entry('a', '1'), entry('b', '1')]);
+    const second = reuseUnchanged(cache, [entry('a', '1'), entry('b', '1')]);
+    expect(second[0]).toBe(first[0]);
+    expect(second[1]).toBe(first[1]);
+  });
+
+  it('바뀐 항목만 새 객체가 된다', () => {
+    const cache = new Map();
+    const first = reuseUnchanged(cache, [entry('a', '1'), entry('b', '1')]);
+    const next = [entry('a', '2'), entry('b', '1')];
+    const second = reuseUnchanged(cache, next);
+    expect(second[0]).toBe(next[0].value); // a는 새 값
+    expect(second[0]).not.toBe(first[0]);
+    expect(second[1]).toBe(first[1]); // b는 그대로
+  });
+
+  it('이번에 안 쓰인 키는 캐시에서 지운다 — 자정·주 시작 변경으로 범위가 밀려도 쌓이지 않게', () => {
+    const cache = new Map();
+    reuseUnchanged(cache, [entry('a', '1'), entry('b', '1')]);
+    reuseUnchanged(cache, [entry('b', '1'), entry('c', '1')]);
+    expect([...cache.keys()]).toEqual(['b', 'c']);
   });
 });
 
