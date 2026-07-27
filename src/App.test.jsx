@@ -80,6 +80,30 @@ describe('App 통계 — 기록 없는 주는 판정하지 않는다', () => {
   });
 });
 
+describe('App 캘린더 — 기록 없는 주에는 달성 칩을 달지 않는다 (#54)', () => {
+  const beer = { id: 'r2', name: '음주', iconKey: 'beer', color: '#E11D48', goalType: 'atMost', goalCount: 1, visible: true };
+  const openCalendar = () => fireEvent.click(screen.getByRole('button', { name: '캘린더' }));
+
+  it('기록이 없으면 과거 주에 칩이 하나도 없다', () => {
+    localStorage.setItem(STORAGE_KEY, serializeState({ routines: [beer], checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 }));
+    render(<App />);
+    openCalendar();
+    // 예전에는 빈 과거 주가 "0회 ≤ 한도 1"로 달성이 돼 지난 주마다 맥주 칩이 붙었다.
+    expect(screen.queryAllByLabelText('음주 주간 목표 달성')).toHaveLength(0);
+  });
+
+  it('지난주에 기록이 있고 한도를 지켰으면 그 주에만 칩이 붙는다', () => {
+    const lastWeek = formatDateKey(addDays(startOfToday(), -7));
+    localStorage.setItem(
+      STORAGE_KEY,
+      serializeState({ routines: [beer], checks: { [lastWeek]: { r2: CHECK_KEPT } }, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 }),
+    );
+    render(<App />);
+    openCalendar();
+    expect(screen.queryAllByLabelText('음주 주간 목표 달성')).toHaveLength(1);
+  });
+});
+
 describe('App 지킴 — 줄이기 루틴 4-상태 (#46)', () => {
   const beer = { id: 'r2', name: '음주', iconKey: 'beer', color: '#E11D48', goalType: 'atMost', goalCount: 1, visible: true };
   const seed = (checks = {}) =>
