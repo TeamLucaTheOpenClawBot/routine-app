@@ -337,6 +337,13 @@ export function currentStreak(results) {
   return streak;
 }
 
+// 설정 화면에 Access 로그인 링크를 보여야 하는가(#51). 미연결(아직 못 켬)일 때뿐 아니라
+// **연결된 뒤 세션이 만료된 reauth 상태에서도** 보여야 한다 — 그때 링크가 없으면 사용자에게 남는
+// 선택지가 '연결 해제'뿐인데, 그건 밀지 못한 outbox·커서를 버려 미동기화 편집을 잃게 만든다.
+export function showsLoginLink(connected, syncStatus) {
+  return !connected || syncStatus === 'reauth';
+}
+
 // ---- persistence (localStorage) ----
 // 상태를 localStorage에 저장/복원. 스키마에 version을 포함해 향후 마이그레이션 여지를 둔다.
 // 파싱/검증 로직은 순수 함수(serializeState/parseState)로 두어 테스트 가능하게 하고,

@@ -31,6 +31,7 @@ import {
   rangeStart,
   saveState,
   serializeState,
+  showsLoginLink,
   startOfToday,
   nextReminderAt,
   startOfWeek,
@@ -212,6 +213,25 @@ describe('통계 — 기록 없는 주는 판정하지 않는다', () => {
     expect(weekHasRecord(ws, 'r2', { '2026-07-14': { r2: { chance: 'weekly' } } })).toBe(true);
     expect(weekHasRecord(ws, 'r2', { '2026-07-14': { r1: true } })).toBe(false); // 다른 루틴
     expect(weekHasRecord(ws, 'r2', { '2026-07-19': { r2: true } })).toBe(false); // 다음 주
+  });
+});
+
+describe('Access 로그인 링크 노출 조건 (#51)', () => {
+  it('미연결이면 상태와 무관하게 보여준다', () => {
+    expect(showsLoginLink(false, 'off')).toBe(true);
+    expect(showsLoginLink(false, 'reauth')).toBe(true);
+    expect(showsLoginLink(false, 'offline')).toBe(true);
+  });
+
+  it('연결된 뒤 세션이 만료되면(reauth) 보여준다 — 안 그러면 남는 선택지가 연결 해제뿐이라 미동기화 편집을 잃는다', () => {
+    expect(showsLoginLink(true, 'reauth')).toBe(true);
+  });
+
+  it('정상 동작 중일 땐 감춘다', () => {
+    expect(showsLoginLink(true, 'synced')).toBe(false);
+    expect(showsLoginLink(true, 'syncing')).toBe(false);
+    expect(showsLoginLink(true, 'offline')).toBe(false); // 오프라인은 로그인 문제가 아니다
+    expect(showsLoginLink(true, 'error')).toBe(false);
   });
 });
 

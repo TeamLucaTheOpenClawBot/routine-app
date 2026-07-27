@@ -112,6 +112,15 @@ const server = createServer(async (req, res) => {
     return json(res, 200, { email: auth.email, sub: auth.sub });
   }
 
+  // 앱 안에서 끝나는 로그인 진입점(#51). 여기까지 왔다는 건 Access 인증을 통과했다는 뜻이므로
+  // 앱 루트로 돌려보낸다 — 설치한 PWA(특히 iOS는 브라우저와 쿠키 저장소가 분리된다)에서 사용자가
+  // 로그인할 유일한 경로다. fetch로는 로그인을 시작할 수 없다(엣지 302를 따라가도 화면이 없다).
+  // **목적지는 '/'로 고정**한다 — 쿼리로 받으면 오픈 리다이렉트가 된다.
+  if (req.method === 'GET' && url.pathname === '/api/login') {
+    res.writeHead(302, { location: '/', 'cache-control': 'no-store' });
+    return res.end();
+  }
+
   // 밀어넣기와 당겨오기를 한 왕복으로 처리한다 — 둘로 나누면 그 사이에 중간 상태가 생긴다.
   if (req.method === 'POST' && url.pathname === '/api/sync') {
     const body = await readJsonBody(req);
