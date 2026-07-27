@@ -6,6 +6,9 @@ import {
   bonusChancesLeft,
   chanceSummary,
   chanceUsages,
+  CHECK_KEPT,
+  checkLabel,
+  checkState,
   clearState,
   cycleCheck,
   currentStreak,
@@ -431,6 +434,81 @@ describe('찬스 — 3-상태 토글과 복원', () => {
     const start = { '2026-07-15': { r2: true } };
     const next = cycleCheck(start, GYM, '2026-07-15', bonuses, 0);
     expect(next.checks['2026-07-15']).toEqual({ r2: true, r1: true });
+  });
+});
+
+// ---- 지킴(atMost 4-상태) ----
+// 줄이기 루틴은 비워두면 저절로 달성이라 "안 했다"와 "아직 안 눌렀다"가 구분되지 않는다.
+// 지킴은 안 한 날을 적극적으로 남기는 값이고, 목표 집계에는 영향을 주지 않는다.
+describe('지킴 — 줄이기 루틴의 4-상태', () => {
+  const bonuses = [];
+
+  it('줄이기 루틴은 안함 → 지킴 → 함 → 찬스 → 안함으로 순환한다', () => {
+    const a = cycleCheck({}, BEER, '2026-07-15', bonuses, 0);
+    expect(a.checks['2026-07-15'].r2).toBe(CHECK_KEPT);
+
+    const b = cycleCheck(a.checks, BEER, '2026-07-15', bonuses, 0);
+    expect(b.checks['2026-07-15'].r2).toBe(true);
+
+    const c = cycleCheck(b.checks, BEER, '2026-07-15', bonuses, 0);
+    expect(c.checks['2026-07-15'].r2).toEqual(W);
+
+    const d = cycleCheck(c.checks, BEER, '2026-07-15', bonuses, 0);
+    expect(d.checks['2026-07-15']).toBeUndefined();
+  });
+
+  it('늘리기 루틴의 순환에는 지킴이 끼어들지 않는다', () => {
+    const a = cycleCheck({}, GYM, '2026-07-15', bonuses, 0);
+    expect(a.checks['2026-07-15'].r1).toBe(true);
+  });
+
+  it('지킴은 주간 집계에 세지 않는다 — 매일 지켜도 0회', () => {
+    const checks = {};
+    for (let i = 0; i < 7; i += 1) checks[formatDateKey(new Date(2026, 6, 12 + i))] = { r2: CHECK_KEPT };
+    expect(weekCount(weekStart, BEER, checks)).toBe(0);
+    expect(evaluateWeek(BEER, checks, weekStart)).toBe(true);
+
+    // 지킨 날들 사이에 이틀 마시면 한도 1회를 넘겨 실패해야 한다(지킴이 카운트를 가리지 않는다).
+    checks['2026-07-13'] = { r2: true };
+    checks['2026-07-16'] = { r2: true };
+    expect(weekCount(weekStart, BEER, checks)).toBe(2);
+    expect(evaluateWeek(BEER, checks, weekStart)).toBe(false);
+  });
+
+  it('checkState는 지킴을 했음·찬스와 구분한다', () => {
+    const checks = { '2026-07-15': { r2: CHECK_KEPT, r1: true }, '2026-07-16': { r2: W } };
+    expect(checkState(checks, '2026-07-15', 'r2')).toBe('kept');
+    expect(checkState(checks, '2026-07-15', 'r1')).toBe('done');
+    expect(checkState(checks, '2026-07-16', 'r2')).toBe('chance');
+    expect(checkState(checks, '2026-07-17', 'r2')).toBe('none');
+  });
+
+  it('checkLabel은 줄이기 루틴의 done을 달성이 아니라 함으로 부른다', () => {
+    expect(checkLabel('kept', 'atMost')).toBe('지킴');
+    expect(checkLabel('done', 'atMost')).toBe('함');
+    expect(checkLabel('done', 'atLeast')).toBe('완료');
+    expect(checkLabel('chance', 'atMost')).toBe('찬스로 킵함');
+    expect(checkLabel('none', 'atLeast')).toBe('미완료');
+  });
+
+  it('목표를 늘리기로 바꾼 뒤 남은 옛 지킴은 한 번 탭하면 정리된다', () => {
+    const stale = { '2026-07-15': { r1: CHECK_KEPT } };
+    const next = cycleCheck(stale, GYM, '2026-07-15', bonuses, 0);
+    expect(next.checks['2026-07-15']).toBeUndefined();
+  });
+
+  it('지킴은 저장·복원을 견딘다(스키마 v2 그대로, 버전 올리지 않음)', () => {
+    const state = {
+      routines: defaultRoutines(),
+      checks: { '2026-07-15': { r2: CHECK_KEPT }, '2026-07-16': { r2: 'bogus' } },
+      bonusChances: {},
+      weekStart: 0,
+      notif: true,
+      remindHour: 21,
+    };
+    const back = parseState(serializeState(state));
+    expect(back.checks['2026-07-15']).toEqual({ r2: CHECK_KEPT });
+    expect(back.checks['2026-07-16']).toBeUndefined(); // 알 수 없는 값은 버린다
   });
 });
 

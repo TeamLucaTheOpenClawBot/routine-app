@@ -63,6 +63,7 @@ export function goalText(routine) {
 // 찬스로 킵한 날은 목표에 유리하게 처리하므로 goalType으로 분기한다 —
 // atLeast는 한 것으로 +1, atMost는 카운트에서 제외(+0). 이 분기가 없으면
 // atMost(줄이는 습관)에서 찬스가 오히려 +1로 새어 목표를 해친다.
+// CHECK_KEPT('지킴')은 어느 쪽에도 세지 않는다 — '그 날 안 했다'는 기록이라 0회다.
 export function weekCount(weekStart, routine, checks) {
   let count = 0;
   for (let i = 0; i < 7; i += 1) {
@@ -93,18 +94,35 @@ export const CHANCE_WEEKLY = 'weekly';
 export const CHANCE_MONTHLY = 'monthly';
 export const CHANCE_BONUS = 'bonus';
 
-// 체크 값은 true(했음) | { chance, bonusId? }(찬스). 찬스면 그 객체를, 아니면 null.
+// 체크 값은 true(했음) | 'kept'(지킴) | { chance, bonusId? }(찬스). 찬스면 그 객체를, 아니면 null.
 export function chanceOf(value) {
   return value && typeof value === 'object' && typeof value.chance === 'string' ? value : null;
 }
 
-// 체크 3-상태 조회 — 'none' | 'done' | 'chance'. 뷰가 Boolean(...)으로 판정하면
-// 찬스가 '했음'과 구분되지 않으므로 판정을 여기 한 곳에 둔다.
+// 줄이기(atMost) 루틴의 '지킴' — 그 날 하지 않았음을 **적극적으로 기록**한 값.
+// 비워두는 것(none)과 다르다: 비어 있으면 "안 했다"인지 "아직 안 눌렀다"인지 구분되지 않아
+// 오늘 진행률·리마인더가 계속 미완료로 남는다(음주처럼 아무것도 안 하면 저절로 달성인 목표에서
+// 특히 그렇다). 목표 집계에는 영향이 없다 — 한 날(true)만 +1이다.
+export const CHECK_KEPT = 'kept';
+
+// 체크 상태 조회 — 'none' | 'done' | 'kept' | 'chance'. 뷰가 Boolean(...)으로 판정하면
+// 찬스·지킴이 '했음'과 구분되지 않으므로 판정을 여기 한 곳에 둔다.
 export function checkState(checks, dateKey, routineId) {
   const value = checks[dateKey]?.[routineId];
   if (value === true) return 'done';
+  if (value === CHECK_KEPT) return 'kept';
   if (chanceOf(value)) return 'chance';
   return 'none';
+}
+
+// 체크 상태의 사람이 읽는 이름. 줄이기 루틴의 'done'은 달성이 아니라 '한 날'이므로
+// goalType으로 분기한다 — 뷰마다 이 분기를 되풀이하지 않도록 여기서 준다(aria-label·표시 공용).
+export function checkLabel(state, goalType) {
+  const atMost = goalType === 'atMost';
+  if (state === 'chance') return '찬스로 킵함';
+  if (state === 'kept') return '지킴';
+  if (state === 'done') return atMost ? '함' : '완료';
+  return atMost ? '기록 없음' : '미완료';
 }
 
 // 특정 루틴의 찬스 사용 전부 — 날짜 오름차순. dateKey가 YYYY-MM-DD라 사전순=시간순.
@@ -187,11 +205,15 @@ export function nextBonusId(bonuses) {
   return `b${max + 1}`;
 }
 
-// 체크 3-상태 순환: 안함 → 했음 → 찬스 → 안함.
+// 체크 순환. 늘리기(atLeast)는 3-상태 — 안함 → 했음 → 찬스 → 안함.
+// 줄이기(atMost)는 4-상태 — 안함 → 지킴 → 함 → 찬스 → 안함. 지킴을 **첫 단계**에 두는 이유는
+// 줄이는 습관에선 지킨 날이 대부분이라 하루 한 번 탭으로 끝나야 하고, 그래야 '기록 없음'이
+// 저절로 달성으로 보이는 문제(#46)가 사라지기 때문이다.
 // 보유 찬스가 0이면 찬스 단계를 건너뛰어 '했음 → 안함'으로 간다(blocked로 알려 UI가 안내).
 // 새 checks를 돌려주는 순수 함수 — 사용 기록이 곧 소진이므로 별도 차감이 없다.
 export function cycleCheck(checks, routine, dateKey, bonuses, weekStart = 0) {
   const current = checks[dateKey]?.[routine.id];
+  const atMost = routine.goalType === 'atMost';
   const setValue = (value) => {
     const day = { ...(checks[dateKey] ?? {}) };
     if (value === undefined) delete day[routine.id];
@@ -202,7 +224,11 @@ export function cycleCheck(checks, routine, dateKey, bonuses, weekStart = 0) {
     return out;
   };
 
-  if (current === undefined) return { checks: setValue(true), blocked: false };
+  if (current === undefined) return { checks: setValue(atMost ? CHECK_KEPT : true), blocked: false };
+  if (current === CHECK_KEPT) {
+    // 목표를 atLeast로 바꾼 뒤 남은 옛 '지킴'은 그 루틴에서 의미가 없으므로 안함으로 정리한다.
+    return { checks: setValue(atMost ? true : undefined), blocked: false };
+  }
   if (current === true) {
     const source = pickChanceSource(checks, routine.id, parseDateKey(dateKey), bonuses, weekStart);
     if (!source) return { checks: setValue(undefined), blocked: true };
@@ -336,7 +362,7 @@ function sanitizeRoutines(input) {
   return out;
 }
 
-// checks를 { dateKey: { routineId: true | {chance,bonusId?} } } 형태로 정규화.
+// checks를 { dateKey: { routineId: true | 'kept' | {chance,bonusId?} } } 형태로 정규화.
 // 존재하지 않는 루틴 id와 알 수 없는 찬스 종류는 버린다.
 function sanitizeChecks(input, validIds) {
   if (!input || typeof input !== 'object') return {};
@@ -348,6 +374,10 @@ function sanitizeChecks(input, validIds) {
       if (!validIds.has(routineId)) continue;
       if (value === true) {
         kept[routineId] = true;
+        continue;
+      }
+      if (value === CHECK_KEPT) {
+        kept[routineId] = CHECK_KEPT;
         continue;
       }
       const c = chanceOf(value);
