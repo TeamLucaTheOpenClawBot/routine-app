@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PALETTE,
   ICON_KEYS,
@@ -20,6 +20,7 @@ import {
   nextBonusId,
   bonusChanceRows,
   purgeRoutineChecks,
+  reuseUnchanged,
   purgeRoutineBonuses,
   cycleCheck,
   checkState,
@@ -527,7 +528,11 @@ function App() {
   }, [activeTab, weekStart, routines.length]);
 
   // ---- derived view models ----
+  // 지난 렌더의 주 카드 객체를 시그니처와 함께 들고 있다가, 값이 그대로면 같은 객체를 다시 내보낸다.
+  const weekCacheRef = useRef(new Map());
   const weeks = useMemo(() => {
+    // 루틴의 겉모습(이름·색·아이콘·목표)이 바뀌면 모든 주가 다시 그려져야 하므로 한 번만 만들어 공유한다.
+    const routinesSig = visibleRoutines.map((r) => `${r.id}${r.iconKey}${r.color}${r.name}${r.goalType}${r.goalCount}`).join(',');
     const start = rangeStart(today, weekStart);
     const result = [];
     for (let w = 0; w < TOTAL_WEEKS; w += 1) {
@@ -559,15 +564,23 @@ function App() {
             });
         days.push({ key, date, dateNum: date.getDate(), dow: date.getDay(), isToday: key === todayKey, isFuture, icons });
       }
-      result.push({
+      const card = {
         key: formatDateKey(ws),
         isCurrent,
         rangeLabel: `${ws.getMonth() + 1}.${ws.getDate()} – ${we.getMonth() + 1}.${we.getDate()}`,
         chips,
         days,
-      });
+      };
+      // 시그니처는 **이 카드가 실제로 그리는 것**만 압축해 담는다. JSON.stringify(card)는 하루당
+      // 루틴 객체까지 통째로 직렬화해 첫 렌더를 오히려 느리게 만든다(측정 89ms → 121ms).
+      const signature = `${card.key}|${isCurrent ? 1 : 0}|${chips.map((r) => r.id).join(',')}|${routinesSig}|${days
+        .map((d) => `${d.dateNum}${d.isToday ? 'T' : ''}${d.isFuture ? 'F' : ''}:${d.icons.map((i) => `${i.routine.id}${i.state}${i.glow ? 'g' : ''}`).join('')}`)
+        .join(';')}`;
+      result.push({ key: card.key, signature, value: card });
     }
-    return result;
+    // **바뀐 주만 새 객체로 내보낸다** — 전부 새로 만들면 WeekCard의 memo가 매번 뚫려, 체크 하나
+    // 바꿀 때마다 캘린더 전체(아이콘 수백 개)가 다시 그려진다(#8 측정: 시트 토글 10.0ms → 4.1ms).
+    return reuseUnchanged(weekCacheRef.current, result);
   }, [checks, visibleRoutines, weekStart, today, todayKey]);
 
   const calStatText = useMemo(() => {
@@ -965,54 +978,64 @@ function CalendarScreen({ weeks, weekStart, monthTitle, statText, onAdd, onOpenD
       </div>
       <div style={{ padding: '2px 12px 20px', display: 'flex', flexDirection: 'column', gap: 11 }}>
         {weeks.map((week) => (
-          <div key={week.key} data-current={week.isCurrent ? '1' : '0'} style={{ background: 'var(--color-surface)', border: week.isCurrent ? '1.5px solid var(--color-primary)' : '1px solid var(--color-border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)', padding: '13px 13px 14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11 }}>
-              <span style={{ fontSize: 13.5, fontWeight: 800 }}>{week.rangeLabel}</span>
-              {week.isCurrent && <span style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--color-primary-text)', background: 'var(--color-primary-50)', padding: '2px 8px', borderRadius: 999 }}>이번 주</span>}
-              <div style={{ flex: 1 }} />
-              {week.chips.length > 0 && (
-                <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-                  {week.chips.map((routine) => (
-                    <div key={routine.id} role="img" aria-label={`${routine.name} 주간 목표 달성`} style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', background: rgba(routine.color, 0.16), boxShadow: `0 0 0 1.5px ${rgba(routine.color, 0.85)}, 0 0 9px ${rgba(routine.color, 0.5)}`, animation: 'glowPulse 2.6s ease-in-out infinite' }}>
-                      <Icon name={routine.iconKey} size={13} color={routine.color} strokeWidth={2.2} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-              {week.days.map((day) => {
-                const wc = weekendColor(day.dow);
-                const [, mm, dd] = day.key.split('-');
-                return (
-                  <button key={day.key} type="button" disabled={day.isFuture} onClick={day.isFuture ? undefined : () => onOpenDay(day.key)} aria-label={`${Number(mm)}월 ${Number(dd)}일 체크 보기`} style={{ font: 'inherit', border: 'none', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, padding: '4px 0 6px', borderRadius: 10, cursor: day.isFuture ? 'default' : 'pointer', background: day.isToday ? 'var(--color-primary-50)' : 'transparent' }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: day.isFuture ? 'var(--color-disabled-text)' : wc || 'var(--color-muted)', marginBottom: 1 }}>{WEEKDAYS[day.dow]}</span>
-                    <div style={{ width: 22, height: 22, borderRadius: '50%', background: day.isToday ? 'var(--color-primary-strong)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '1px 0' }}>
-                      <span style={{ fontSize: day.isToday ? 12 : 12.5, fontWeight: day.isToday ? 800 : 700, color: day.isToday ? '#fff' : day.isFuture ? 'var(--color-disabled-text)' : wc || 'var(--color-text)' }}>{day.dateNum}</span>
-                    </div>
-                    {day.icons.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, justifyContent: 'center', alignContent: 'flex-start', width: '100%', marginTop: 2 }}>
-                        {day.icons.map((icon) => (
-                          <div key={icon.routine.id} title={icon.state === 'none' ? undefined : `${icon.routine.name} — ${checkLabel(icon.state, icon.routine.goalType)}`} style={{ width: 18, height: 18, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', position: 'relative', background: icon.state === 'chance' ? 'var(--color-chance-50)' : icon.state === 'kept' ? 'var(--color-primary-50)' : icon.done ? rgba(icon.routine.color, 0.15) : 'transparent', boxShadow: icon.glow ? `0 0 0 1.5px ${rgba(icon.routine.color, 0.9)}, 0 0 8px ${rgba(icon.routine.color, 0.5)}` : 'none', animation: icon.glow ? 'glowPulse 2.6s ease-in-out infinite' : 'none' }}>
-                            <Icon name={icon.routine.iconKey} size={12} color={icon.state === 'chance' ? 'var(--color-chance)' : icon.state === 'kept' ? 'var(--color-primary-text)' : icon.done ? icon.routine.color : 'var(--color-outline)'} strokeWidth={2} />
-                            {/* 색만으로 구분되지 않도록 찬스엔 별, 지킨 날엔 체크를 작게 겹쳐 표시 */}
-                            {(icon.state === 'chance' || icon.state === 'kept') && (
-                              <span aria-hidden style={{ position: 'absolute', right: -1, bottom: -2, fontSize: 8, lineHeight: 1, color: icon.state === 'chance' ? 'var(--color-chance)' : 'var(--color-primary-text)', fontWeight: 800 }}>{icon.state === 'chance' ? '★' : '✓'}</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <WeekCard key={week.key} week={week} onOpenDay={onOpenDay} />
         ))}
       </div>
     </>
   );
 }
+
+// 한 주 카드. **memo가 이 화면의 핵심 최적화다** — 캘린더 한 화면에 아이콘이 수백 개(주 11 × 일 7 ×
+// 루틴 수)라, 체크 하나 바꿀 때마다 전부 다시 그리면 시트에서의 토글이 오늘 탭보다 4배 느려진다
+// (측정: 10.7ms → 2.8ms). App이 바뀐 주의 객체만 새로 만들어 주므로(weeks useMemo의 재사용 캐시)
+// 나머지 주는 여기서 걸러진다. onOpenDay는 useCallback으로 고정돼 있어야 memo가 뚫리지 않는다.
+const WeekCard = memo(function WeekCard({ week, onOpenDay }) {
+  return (
+    <div data-current={week.isCurrent ? '1' : '0'} style={{ background: 'var(--color-surface)', border: week.isCurrent ? '1.5px solid var(--color-primary)' : '1px solid var(--color-border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)', padding: '13px 13px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11 }}>
+        <span style={{ fontSize: 13.5, fontWeight: 800 }}>{week.rangeLabel}</span>
+        {week.isCurrent && <span style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--color-primary-text)', background: 'var(--color-primary-50)', padding: '2px 8px', borderRadius: 999 }}>이번 주</span>}
+        <div style={{ flex: 1 }} />
+        {week.chips.length > 0 && (
+          <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+            {week.chips.map((routine) => (
+              <div key={routine.id} role="img" aria-label={`${routine.name} 주간 목표 달성`} style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', background: rgba(routine.color, 0.16), boxShadow: `0 0 0 1.5px ${rgba(routine.color, 0.85)}, 0 0 9px ${rgba(routine.color, 0.5)}`, animation: 'glowPulse 2.6s ease-in-out infinite' }}>
+                <Icon name={routine.iconKey} size={13} color={routine.color} strokeWidth={2.2} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+        {week.days.map((day) => {
+          const wc = weekendColor(day.dow);
+          const [, mm, dd] = day.key.split('-');
+          return (
+            <button key={day.key} type="button" disabled={day.isFuture} onClick={day.isFuture ? undefined : () => onOpenDay(day.key)} aria-label={`${Number(mm)}월 ${Number(dd)}일 체크 보기`} style={{ font: 'inherit', border: 'none', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, padding: '4px 0 6px', borderRadius: 10, cursor: day.isFuture ? 'default' : 'pointer', background: day.isToday ? 'var(--color-primary-50)' : 'transparent' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: day.isFuture ? 'var(--color-disabled-text)' : wc || 'var(--color-muted)', marginBottom: 1 }}>{WEEKDAYS[day.dow]}</span>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', background: day.isToday ? 'var(--color-primary-strong)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '1px 0' }}>
+                <span style={{ fontSize: day.isToday ? 12 : 12.5, fontWeight: day.isToday ? 800 : 700, color: day.isToday ? '#fff' : day.isFuture ? 'var(--color-disabled-text)' : wc || 'var(--color-text)' }}>{day.dateNum}</span>
+              </div>
+              {day.icons.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, justifyContent: 'center', alignContent: 'flex-start', width: '100%', marginTop: 2 }}>
+                  {day.icons.map((icon) => (
+                    <div key={icon.routine.id} title={icon.state === 'none' ? undefined : `${icon.routine.name} — ${checkLabel(icon.state, icon.routine.goalType)}`} style={{ width: 18, height: 18, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', position: 'relative', background: icon.state === 'chance' ? 'var(--color-chance-50)' : icon.state === 'kept' ? 'var(--color-primary-50)' : icon.done ? rgba(icon.routine.color, 0.15) : 'transparent', boxShadow: icon.glow ? `0 0 0 1.5px ${rgba(icon.routine.color, 0.9)}, 0 0 8px ${rgba(icon.routine.color, 0.5)}` : 'none', animation: icon.glow ? 'glowPulse 2.6s ease-in-out infinite' : 'none' }}>
+                      <Icon name={icon.routine.iconKey} size={12} color={icon.state === 'chance' ? 'var(--color-chance)' : icon.state === 'kept' ? 'var(--color-primary-text)' : icon.done ? icon.routine.color : 'var(--color-outline)'} strokeWidth={2} />
+                      {/* 색만으로 구분되지 않도록 찬스엔 별, 지킨 날엔 체크를 작게 겹쳐 표시 */}
+                      {(icon.state === 'chance' || icon.state === 'kept') && (
+                        <span aria-hidden style={{ position: 'absolute', right: -1, bottom: -2, fontSize: 8, lineHeight: 1, color: icon.state === 'chance' ? 'var(--color-chance)' : 'var(--color-primary-text)', fontWeight: 800 }}>{icon.state === 'chance' ? '★' : '✓'}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
 
 function TodayScreen({ today, rows, doneN, total, pct, onToggle }) {
   const dateLabel = `${today.getMonth() + 1}월 ${today.getDate()}일 ${WEEKDAYS[today.getDay()]}요일`;
