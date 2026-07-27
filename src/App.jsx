@@ -1183,6 +1183,12 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
                   <button type="button" disabled={syncBusy} onClick={onEnableUpload} style={enableBtn(true)}>이 기기 데이터로 시작 (클라우드에 올림)</button>
                   <button type="button" disabled={syncBusy} onClick={onEnableCloud} style={enableBtn(false)}>클라우드 데이터로 시작 (이 기기 기록 대체)</button>
                 </div>
+                {/* 로그인은 fetch로 시작할 수 없다(엣지가 로그인 페이지로 302하는데 fetch엔 화면이 없다).
+                    같은 출처 링크로 이동해야 standalone PWA 안에서 흐름이 끝난다 — iOS 홈 화면 앱은
+                    브라우저와 쿠키 저장소가 분리돼, 밖에서 로그인해도 앱 안엔 세션이 없다(#51). */}
+                <a href="/api/login" style={{ display: 'block', marginTop: 10, fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', textDecoration: 'underline' }}>
+                  로그인이 필요하면 여기서 → Access 로그인
+                </a>
               </>
             )}
           </div>

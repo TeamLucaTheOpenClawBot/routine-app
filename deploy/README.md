@@ -49,7 +49,14 @@ API 서비스는 compose `profiles: ["api"]`로 **기본 비활성**이다. 아�
 기동하지 않고, `/api/`는 502를 낸다(앱 서빙엔 영향 없음). 인증은 Cloudflare Access가 담당하므로
 **앱에 인증 코드가 없다** — Access를 붙이지 않은 채 켜면 안 된다.
 
-1. **Cloudflare Zero Trust → Access → Applications → Add an application (Self-hosted)**
+> **2026-07-27 실제 설정 완료.** 팀 도메인 `https://chillingdaisy.cloudflareaccess.com`,
+> 애플리케이션 이름 `routine`(destination `routine.chillingdaisy.org` path `api/*`, 정책
+> Allow→Emails 1개). 서버 `.env`도 이 값으로 생성돼 API가 떠 있다. 아래는 재설정·재현용 절차다.
+
+1. **Cloudflare Zero Trust → Access → Applications → Add an application**
+   - 대시보드가 개편돼 유형 선택이 2단계다: **Self-hosted and private** 탭 → 그 안에서
+     **`Public DNS`** 를 고른다(공인 호스트명 + 터널이므로). `Private destinations`는 WARP로
+     접속하는 내부망용이라 여기선 틀리다 → **Continue with Self-hosted and private**.
    - Application domain: `routine.chillingdaisy.org`, **Path: `api/*`**
      (앱 본체에는 걸지 않는다 — 정적 셸까지 Access 뒤로 넣으면 PWA 오프라인 로드가 로그인
      리다이렉트에 막힌다.)
@@ -60,9 +67,16 @@ API 서비스는 compose `profiles: ["api"]`로 **기본 비활성**이다. 아�
      [Cloudflare 문서](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/):
      하위 경로까지 보호하려면 Path를 비우거나 와일드카드를 쓴다.
    - Policy: Allow → Emails → 본인 이메일
-   - 생성 후 **Application Audience (AUD) Tag**를 복사한다.
-2. **팀 도메인 확인** — Zero Trust → Settings → Custom Pages 등에 표시되는
-   `https://<team>.cloudflareaccess.com`.
+   - 생성 후 **Application Audience (AUD) Tag**를 복사한다. 새 UI의 앱 상세 `Details` 탭에는
+     이름·세션만 있고 AUD가 없다 — `Additional settings` 탭이나 Applications 목록 행의 `⋯`에서 찾는다.
+2. **팀 도메인 확인** — Zero Trust → Settings의 `https://<team>.cloudflareaccess.com`.
+   대시보드에서 못 찾으면 **리다이렉트에서 뽑는 게 빠르고 확실하다**(Access 경로 검증도 겸한다):
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://routine.chillingdaisy.org/api/me
+   # 302 https://<team>.cloudflareaccess.com/cdn-cgi/access/login/... ?kid=<AUD와 동일> ...
+   ```
+
 3. **서버에 `.env` 생성** (compose 파일과 같은 디렉토리).
    위 `chown`을 마쳤다면 **`sudo` 없이 배포 사용자로** 만든다:
 
@@ -104,6 +118,14 @@ API 서비스는 compose `profiles: ["api"]`로 **기본 비활성**이다. 아�
      요청이 정책을 안 거치고 그대로 우리 API에 닿았다는 뜻 → Path를 `api/*`로 고친다.
 
    그다음 브라우저로 같은 URL 접속 → Access 로그인 후 `{"email": ...}`가 나오면 끝.
+
+6. **앱에서 켜기** — 설정 → 클라우드 동기화 → **"이 기기 데이터로 시작"**(첫 기기라면. 클라우드가
+   비어 있는데 "클라우드 데이터로"를 고르면 로컬 기록이 지워진다).
+
+   > **설치한 PWA는 앱 안에서 로그인해야 한다**(#51). 특히 **iOS 홈 화면 앱은 Safari와 쿠키
+   > 저장소가 분리**돼, Safari에서 Access에 로그인해도 앱 안에는 세션이 없어 계속 "연결 안 됨"이다.
+   > 동기화 섹션의 **"Access 로그인" 링크**(`/api/login` — 인증 후 앱 루트로 302)를 앱 안에서 눌러
+   > 로그인한 뒤 연결한다. fetch로는 로그인을 시작할 수 없다(엣지 302를 따라가도 화면이 없다).
 
 ### 잠금 화면 알림 (Web Push · #6 2단계 — 선택)
 

@@ -285,6 +285,15 @@ describe('클라우드 동기화 UI (#7 4/4)', () => {
     // 미연결이므로 연결 해제 버튼은 없다
     expect(screen.queryByText('연결 해제')).not.toBeInTheDocument();
   });
+
+  // 설치한 PWA(특히 iOS)는 브라우저와 쿠키 저장소가 분리돼, 앱 안에 로그인 경로가 없으면
+  // 영원히 미연결로 남는다(#51). 링크여야 한다 — fetch로는 로그인 화면을 띄울 수 없다.
+  it('미연결 상태에 앱 안에서 로그인할 링크가 있다', () => {
+    render(<App />);
+    fireEvent.click(screen.getByText('설정'));
+    const link = screen.getByRole('link', { name: /Access 로그인/ });
+    expect(link).toHaveAttribute('href', '/api/login');
+  });
 });
 
 describe('알림 설정 UI (#6)', () => {
