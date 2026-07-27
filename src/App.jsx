@@ -27,6 +27,7 @@ import {
   chanceSummary,
   finalizedResults,
   judgedWeeks,
+  showsLoginLink,
   achievementRate,
   currentStreak,
   loadState,
@@ -1123,6 +1124,7 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
   // 바뀌어도 시작 버튼을 유지하고, 그 실패는 힌트로만 보인다(#32 Codex P2).
   const sync = SYNC_UI[connected ? syncStatus : 'off'] ?? SYNC_UI.off;
   const enableError = !connected && (syncStatus === 'offline' || syncStatus === 'reauth' || syncStatus === 'error') ? SYNC_UI[syncStatus] : null;
+  const needsLogin = showsLoginLink(connected, syncStatus);
   const enableBtn = (on) => ({ cursor: syncBusy ? 'default' : 'pointer', opacity: syncBusy ? 0.6 : 1, padding: '9px 14px', borderRadius: 10, fontSize: 13, fontWeight: 800, background: on ? 'var(--color-primary)' : 'var(--color-bg)', color: on ? '#fff' : 'var(--color-text)', border: on ? 'none' : '1px solid var(--color-border)' });
   return (
     <>
@@ -1183,13 +1185,17 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
                   <button type="button" disabled={syncBusy} onClick={onEnableUpload} style={enableBtn(true)}>이 기기 데이터로 시작 (클라우드에 올림)</button>
                   <button type="button" disabled={syncBusy} onClick={onEnableCloud} style={enableBtn(false)}>클라우드 데이터로 시작 (이 기기 기록 대체)</button>
                 </div>
-                {/* 로그인은 fetch로 시작할 수 없다(엣지가 로그인 페이지로 302하는데 fetch엔 화면이 없다).
-                    같은 출처 링크로 이동해야 standalone PWA 안에서 흐름이 끝난다 — iOS 홈 화면 앱은
-                    브라우저와 쿠키 저장소가 분리돼, 밖에서 로그인해도 앱 안엔 세션이 없다(#51). */}
-                <a href="/api/login" style={{ display: 'block', marginTop: 10, fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', textDecoration: 'underline' }}>
-                  로그인이 필요하면 여기서 → Access 로그인
-                </a>
               </>
+            )}
+            {/* 로그인은 fetch로 시작할 수 없다(엣지가 로그인 페이지로 302하는데 fetch엔 화면이 없다).
+                같은 출처 링크로 이동해야 standalone PWA 안에서 흐름이 끝난다 — iOS 홈 화면 앱은
+                브라우저와 쿠키 저장소가 분리돼, 밖에서 로그인해도 앱 안엔 세션이 없다(#51).
+                **연결된 뒤 세션이 만료된 경우(reauth)에도 보여야 한다** — 그때 링크가 없으면 남는
+                선택지가 '연결 해제'뿐인데, 그건 밀지 못한 outbox·커서를 버려 편집이 유실된다. */}
+            {needsLogin && (
+              <a href="/api/login" style={{ display: 'block', marginTop: 10, fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', textDecoration: 'underline' }}>
+                {connected ? '세션이 만료됐어요 → Access 다시 로그인' : '로그인이 필요하면 여기서 → Access 로그인'}
+              </a>
             )}
           </div>
         </div>
