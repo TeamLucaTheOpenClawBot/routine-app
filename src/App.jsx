@@ -932,7 +932,7 @@ function Onboarding({ onAdd }) {
       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
         {ONBOARD_STEPS.map((step) => (
           <div key={step.n} style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: '13px 15px', textAlign: 'left' }}>
-            <div style={{ flex: '0 0 auto', width: 30, height: 30, borderRadius: '50%', background: 'var(--color-primary-50)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>{step.n}</div>
+            <div style={{ flex: '0 0 auto', width: 30, height: 30, borderRadius: '50%', background: 'var(--color-primary-50)', color: 'var(--color-primary-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>{step.n}</div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 700 }}>{step.title}</div>
               <div style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 1 }}>{step.desc}</div>
@@ -968,7 +968,7 @@ function CalendarScreen({ weeks, weekStart, monthTitle, statText, onAdd, onOpenD
           <div key={week.key} data-current={week.isCurrent ? '1' : '0'} style={{ background: 'var(--color-surface)', border: week.isCurrent ? '1.5px solid var(--color-primary)' : '1px solid var(--color-border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)', padding: '13px 13px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11 }}>
               <span style={{ fontSize: 13.5, fontWeight: 800 }}>{week.rangeLabel}</span>
-              {week.isCurrent && <span style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--color-primary)', background: 'var(--color-primary-50)', padding: '2px 8px', borderRadius: 999 }}>이번 주</span>}
+              {week.isCurrent && <span style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--color-primary-text)', background: 'var(--color-primary-50)', padding: '2px 8px', borderRadius: 999 }}>이번 주</span>}
               <div style={{ flex: 1 }} />
               {week.chips.length > 0 && (
                 <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -986,18 +986,18 @@ function CalendarScreen({ weeks, weekStart, monthTitle, statText, onAdd, onOpenD
                 const [, mm, dd] = day.key.split('-');
                 return (
                   <button key={day.key} type="button" disabled={day.isFuture} onClick={day.isFuture ? undefined : () => onOpenDay(day.key)} aria-label={`${Number(mm)}월 ${Number(dd)}일 체크 보기`} style={{ font: 'inherit', border: 'none', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, padding: '4px 0 6px', borderRadius: 10, cursor: day.isFuture ? 'default' : 'pointer', background: day.isToday ? 'var(--color-primary-50)' : 'transparent' }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: day.isFuture ? 'var(--color-field-border)' : wc || 'var(--color-muted)', marginBottom: 1 }}>{WEEKDAYS[day.dow]}</span>
-                    <div style={{ width: 22, height: 22, borderRadius: '50%', background: day.isToday ? 'var(--color-primary)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '1px 0' }}>
-                      <span style={{ fontSize: day.isToday ? 12 : 12.5, fontWeight: day.isToday ? 800 : 700, color: day.isToday ? '#fff' : day.isFuture ? 'var(--color-field-border)' : wc || 'var(--color-text)' }}>{day.dateNum}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: day.isFuture ? 'var(--color-disabled-text)' : wc || 'var(--color-muted)', marginBottom: 1 }}>{WEEKDAYS[day.dow]}</span>
+                    <div style={{ width: 22, height: 22, borderRadius: '50%', background: day.isToday ? 'var(--color-primary-strong)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '1px 0' }}>
+                      <span style={{ fontSize: day.isToday ? 12 : 12.5, fontWeight: day.isToday ? 800 : 700, color: day.isToday ? '#fff' : day.isFuture ? 'var(--color-disabled-text)' : wc || 'var(--color-text)' }}>{day.dateNum}</span>
                     </div>
                     {day.icons.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, justifyContent: 'center', alignContent: 'flex-start', width: '100%', marginTop: 2 }}>
                         {day.icons.map((icon) => (
                           <div key={icon.routine.id} title={icon.state === 'none' ? undefined : `${icon.routine.name} — ${checkLabel(icon.state, icon.routine.goalType)}`} style={{ width: 18, height: 18, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', position: 'relative', background: icon.state === 'chance' ? 'var(--color-chance-50)' : icon.state === 'kept' ? 'var(--color-primary-50)' : icon.done ? rgba(icon.routine.color, 0.15) : 'transparent', boxShadow: icon.glow ? `0 0 0 1.5px ${rgba(icon.routine.color, 0.9)}, 0 0 8px ${rgba(icon.routine.color, 0.5)}` : 'none', animation: icon.glow ? 'glowPulse 2.6s ease-in-out infinite' : 'none' }}>
-                            <Icon name={icon.routine.iconKey} size={12} color={icon.state === 'chance' ? 'var(--color-chance)' : icon.state === 'kept' ? 'var(--color-primary)' : icon.done ? icon.routine.color : 'var(--color-field-border)'} strokeWidth={2} />
+                            <Icon name={icon.routine.iconKey} size={12} color={icon.state === 'chance' ? 'var(--color-chance)' : icon.state === 'kept' ? 'var(--color-primary-text)' : icon.done ? icon.routine.color : 'var(--color-outline)'} strokeWidth={2} />
                             {/* 색만으로 구분되지 않도록 찬스엔 별, 지킨 날엔 체크를 작게 겹쳐 표시 */}
                             {(icon.state === 'chance' || icon.state === 'kept') && (
-                              <span aria-hidden style={{ position: 'absolute', right: -1, bottom: -2, fontSize: 8, lineHeight: 1, color: icon.state === 'chance' ? 'var(--color-chance)' : 'var(--color-primary)', fontWeight: 800 }}>{icon.state === 'chance' ? '★' : '✓'}</span>
+                              <span aria-hidden style={{ position: 'absolute', right: -1, bottom: -2, fontSize: 8, lineHeight: 1, color: icon.state === 'chance' ? 'var(--color-chance)' : 'var(--color-primary-text)', fontWeight: 800 }}>{icon.state === 'chance' ? '★' : '✓'}</span>
                             )}
                           </div>
                         ))}
@@ -1080,7 +1080,7 @@ function StatsScreen({ summary, rows }) {
               </div>
               <div style={{ textAlign: 'right' }}>
                 {/* 판정된 주가 없으면 0%가 아니라 '—' — 기록이 없는 것과 못 지킨 것은 다르다 */}
-                <div style={{ fontSize: 18, fontWeight: 800, color: judged ? routine.color : 'var(--color-field-border)' }}>{judged ? `${pct}%` : '—'}</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: judged ? routine.color : 'var(--color-disabled-text)' }}>{judged ? `${pct}%` : '—'}</div>
                 <div style={{ fontSize: 11, color: 'var(--color-muted)', marginTop: 1 }}>
                   {judged ? `연속 ${streak}주 · ${judged}주 기록` : '기록 없음'}
                 </div>
@@ -1097,7 +1097,7 @@ function StatsScreen({ summary, rows }) {
                   <div
                     key={i}
                     title={ok === null ? '기록 없음' : ok ? '달성' : '미달성'}
-                    style={{ width: 13, height: 13, borderRadius: 4, flex: '0 0 auto', background: ok === null ? 'transparent' : ok ? routine.color : HEAT_EMPTY, border: ok === null ? '1px solid var(--color-border)' : 'none' }}
+                    style={{ width: 13, height: 13, borderRadius: 4, flex: '0 0 auto', background: ok === null ? 'transparent' : ok ? routine.color : HEAT_EMPTY, border: ok === null ? '1px solid var(--color-outline)' : 'none' }}
                   />
                 ))}
               </div>
@@ -1110,10 +1110,10 @@ function StatsScreen({ summary, rows }) {
 }
 
 const SYNC_UI = {
-  off: { label: '연결 안 됨', color: 'var(--color-muted)', dot: 'var(--color-field-border)' },
+  off: { label: '연결 안 됨', color: 'var(--color-muted)', dot: 'var(--color-outline)' },
   syncing: { label: '동기화 중…', color: 'var(--color-muted)', dot: 'var(--color-primary)' },
   synced: { label: '동기화됨', color: 'var(--color-primary)', dot: 'var(--color-primary)' },
-  offline: { label: '오프라인 — 연결되면 자동 동기화', color: 'var(--color-muted)', dot: 'var(--color-field-border)' },
+  offline: { label: '오프라인 — 연결되면 자동 동기화', color: 'var(--color-muted)', dot: 'var(--color-outline)' },
   reauth: { label: '재로그인이 필요해요', color: 'var(--color-expired-text)', dot: 'var(--color-expired-text)' },
   mismatch: { label: '다른 계정으로 로그인됨 — 새로고침하세요', color: 'var(--color-expired-text)', dot: 'var(--color-expired-text)' },
   error: { label: '동기화 오류 — 잠시 후 재시도', color: 'var(--color-expired-text)', dot: 'var(--color-expired-text)' },
@@ -1121,14 +1121,14 @@ const SYNC_UI = {
 
 function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remindHour, notifPerm, onToggleNotif, onSetRemindHour, push, weekStart, onSetWeekStart, onReset, syncStatus, connected, account, syncBusy, onEnableUpload, onEnableCloud, onDisableSync }) {
   const full = routines.length >= 5;
-  const seg = (on) => ({ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: on ? 800 : 700, cursor: 'pointer', background: on ? 'var(--color-primary)' : 'transparent', color: on ? '#fff' : 'var(--color-muted)' });
+  const seg = (on) => ({ padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: on ? 800 : 700, cursor: 'pointer', background: on ? 'var(--color-primary-strong)' : 'transparent', color: on ? '#fff' : 'var(--color-muted)' });
   const sectionLabel = { fontSize: 12, fontWeight: 800, color: 'var(--color-muted)', letterSpacing: '0.04em', padding: '0 4px 8px' };
   // 연결 여부는 owner 바인딩(connected) 기준. 미연결일 땐 켜기 시도가 실패해(offline/reauth) 상태가
   // 바뀌어도 시작 버튼을 유지하고, 그 실패는 힌트로만 보인다(#32 Codex P2).
   const sync = SYNC_UI[connected ? syncStatus : 'off'] ?? SYNC_UI.off;
   const enableError = !connected && (syncStatus === 'offline' || syncStatus === 'reauth' || syncStatus === 'error') ? SYNC_UI[syncStatus] : null;
   const needsLogin = showsLoginLink(connected, syncStatus);
-  const enableBtn = (on) => ({ cursor: syncBusy ? 'default' : 'pointer', opacity: syncBusy ? 0.6 : 1, padding: '9px 14px', borderRadius: 10, fontSize: 13, fontWeight: 800, background: on ? 'var(--color-primary)' : 'var(--color-bg)', color: on ? '#fff' : 'var(--color-text)', border: on ? 'none' : '1px solid var(--color-border)' });
+  const enableBtn = (on) => ({ cursor: syncBusy ? 'default' : 'pointer', opacity: syncBusy ? 0.6 : 1, padding: '9px 14px', borderRadius: 10, fontSize: 13, fontWeight: 800, background: on ? 'var(--color-primary-strong)' : 'var(--color-bg)', color: on ? '#fff' : 'var(--color-text)', border: on ? 'none' : '1px solid var(--color-border)' });
   return (
     <>
       <div style={{ padding: '22px 18px 10px' }}>
@@ -1148,14 +1148,14 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
                   <div style={{ fontSize: 15, fontWeight: 700 }}>{routine.name}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--color-muted)', marginTop: 1 }}>{goalText(routine)}</div>
                 </button>
-                <button type="button" aria-label={`${routine.name} ${routine.visible ? '숨기기' : '표시하기'}`} onClick={() => onToggleVisible(routine.id)} style={{ cursor: 'pointer', padding: '6px 11px', borderRadius: 9, fontSize: 12, fontWeight: 700, background: routine.visible ? 'var(--color-primary-50)' : 'var(--color-bg)', color: routine.visible ? 'var(--color-primary)' : 'var(--color-muted)' }}>{routine.visible ? '표시' : '숨김'}</button>
+                <button type="button" aria-label={`${routine.name} ${routine.visible ? '숨기기' : '표시하기'}`} onClick={() => onToggleVisible(routine.id)} style={{ cursor: 'pointer', padding: '6px 11px', borderRadius: 9, fontSize: 12, fontWeight: 700, background: routine.visible ? 'var(--color-primary-50)' : 'var(--color-bg)', color: routine.visible ? 'var(--color-primary-text)' : 'var(--color-muted)' }}>{routine.visible ? '표시' : '숨김'}</button>
                 <button type="button" aria-label={`${routine.name} 편집`} onClick={() => onEdit(routine.id)} style={{ cursor: 'pointer', flex: '0 0 auto', display: 'flex' }}>
-                  <Icon name="chevron" size={18} color="var(--color-field-border)" strokeWidth={2.4} />
+                  <Icon name="chevron" size={18} color="var(--color-outline)" strokeWidth={2.4} />
                 </button>
               </div>
             ))}
-            <button type="button" onClick={onAdd} disabled={full} style={{ cursor: full ? 'default' : 'pointer', width: '100%', minHeight: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 14, border: '1.5px dashed var(--color-field-border)', color: full ? 'var(--color-field-border)' : 'var(--color-primary)', fontSize: 15, fontWeight: 800, background: full ? 'var(--color-bg)' : 'var(--color-primary-50)' }}>
-              <Icon name="plus" size={18} color={full ? 'var(--color-field-border)' : 'var(--color-primary)'} strokeWidth={2.4} /> 루틴 추가 ({routines.length}/5)
+            <button type="button" onClick={onAdd} disabled={full} style={{ cursor: full ? 'default' : 'pointer', width: '100%', minHeight: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 14, border: '1.5px dashed var(--color-outline)', color: full ? 'var(--color-disabled-text)' : 'var(--color-primary-text)', fontSize: 15, fontWeight: 800, background: full ? 'var(--color-bg)' : 'var(--color-primary-50)' }}>
+              <Icon name="plus" size={18} color={full ? 'var(--color-disabled-text)' : 'var(--color-primary-text)'} strokeWidth={2.4} /> 루틴 추가 ({routines.length}/5)
             </button>
           </div>
         </div>
@@ -1212,7 +1212,7 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
                 <div style={{ fontSize: 15, fontWeight: 700 }}>매일 리마인더</div>
                 <div style={{ fontSize: 12, color: 'var(--color-muted)', marginTop: 2 }}>매일 {String(remindHour).padStart(2, '0')}:00 · 앱이 열려 있을 때 알림</div>
               </div>
-              <button type="button" aria-label="매일 리마인더" aria-pressed={notif} onClick={onToggleNotif} style={{ width: 46, height: 27, borderRadius: 999, flex: '0 0 auto', background: notif ? 'var(--color-primary)' : 'var(--color-field-border)', position: 'relative', cursor: 'pointer', transition: 'background .18s', padding: 0 }}>
+              <button type="button" aria-label="매일 리마인더" aria-pressed={notif} onClick={onToggleNotif} style={{ width: 46, height: 27, borderRadius: 999, flex: '0 0 auto', background: notif ? 'var(--color-primary)' : 'var(--color-outline)', position: 'relative', cursor: 'pointer', transition: 'background .18s', padding: 0 }}>
                 <span style={{ position: 'absolute', top: 3, left: notif ? 22 : 3, width: 21, height: 21, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.2)', transition: 'left .18s' }} />
               </button>
             </div>
@@ -1245,7 +1245,7 @@ function SettingsScreen({ routines, onEdit, onToggleVisible, onAdd, notif, remin
                   ) : push.on ? (
                     <button type="button" disabled={push.busy} onClick={push.onDisable} style={{ cursor: push.busy ? 'default' : 'pointer', opacity: push.busy ? 0.6 : 1, flex: '0 0 auto', padding: '7px 12px', borderRadius: 10, fontSize: 12.5, fontWeight: 800, background: 'var(--color-bg)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}>해제</button>
                   ) : (
-                    <button type="button" disabled={push.busy} onClick={push.onEnable} style={{ cursor: push.busy ? 'default' : 'pointer', opacity: push.busy ? 0.6 : 1, flex: '0 0 auto', padding: '7px 12px', borderRadius: 10, fontSize: 12.5, fontWeight: 800, background: 'var(--color-primary)', color: '#fff', border: 'none' }}>이 기기 등록</button>
+                    <button type="button" disabled={push.busy} onClick={push.onEnable} style={{ cursor: push.busy ? 'default' : 'pointer', opacity: push.busy ? 0.6 : 1, flex: '0 0 auto', padding: '7px 12px', borderRadius: 10, fontSize: 12.5, fontWeight: 800, background: 'var(--color-primary-strong)', color: '#fff', border: 'none' }}>이 기기 등록</button>
                   )}
                 </div>
                 {push.connected && push.on && (
@@ -1350,7 +1350,7 @@ function BonusChanceSection({ routineId, bonuses, chances, onAdd, onDelete }) {
       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--color-muted)', margin: '22px 0 8px' }}>찬스</div>
       <div style={{ background: 'var(--color-bg)', borderRadius: 12, padding: '11px 14px', marginBottom: 10, fontSize: 13, fontWeight: 700, color: 'var(--color-muted)' }}>
         남은 찬스 <span style={{ color: 'var(--color-chance)' }}>주 {chances.weekly} · 월 {chances.monthly} · 기타 {chances.bonus}</span>
-        <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 3, color: 'var(--color-field-border)' }}>주·월 찬스는 주/달이 바뀌면 자동으로 돌아와요 (각 1개, 쌓이지 않음)</div>
+        <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 3, color: 'var(--color-disabled-text)' }}>주·월 찬스는 주/달이 바뀌면 자동으로 돌아와요 (각 1개, 쌓이지 않음)</div>
       </div>
 
       <div style={{ display: 'flex', gap: 7 }}>
@@ -1361,7 +1361,7 @@ function BonusChanceSection({ routineId, bonuses, chances, onAdd, onDelete }) {
           placeholder="기타찬스 사유 (필수)"
           aria-label="기타찬스 사유"
           aria-invalid={error || undefined}
-          style={{ flex: 1, minWidth: 0, background: 'var(--color-bg)', border: `1px solid ${error ? 'var(--color-expired-text)' : 'var(--color-field-border)'}`, borderRadius: 12, padding: '11px 13px', fontSize: 14.5, fontWeight: 600, color: 'var(--color-text)' }}
+          style={{ flex: 1, minWidth: 0, background: 'var(--color-bg)', border: `1px solid ${error ? 'var(--color-expired-text)' : 'var(--color-outline)'}`, borderRadius: 12, padding: '11px 13px', fontSize: 14.5, fontWeight: 600, color: 'var(--color-text)' }}
         />
         <button type="button" onClick={submit} style={{ cursor: 'pointer', flex: '0 0 auto', padding: '0 16px', borderRadius: 12, background: 'var(--color-chance)', color: '#1a1206', fontSize: 14, fontWeight: 800 }}>추가</button>
       </div>
@@ -1371,10 +1371,10 @@ function BonusChanceSection({ routineId, bonuses, chances, onAdd, onDelete }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
           {bonuses.map((b) => (
             <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--color-bg)', borderRadius: 12, padding: '10px 13px' }}>
-              <span aria-hidden style={{ color: b.usedOn ? 'var(--color-field-border)' : 'var(--color-chance)', fontSize: 13, fontWeight: 800 }}>★</span>
+              <span aria-hidden style={{ color: b.usedOn ? 'var(--color-disabled-text)' : 'var(--color-chance)', fontSize: 13, fontWeight: 800 }}>★</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: b.usedOn ? 'var(--color-muted)' : 'var(--color-text)', textDecoration: b.usedOn ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.reason}</div>
-                {b.usedOn && <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--color-field-border)', marginTop: 1 }}>{b.usedOn}에 사용함</div>}
+                {b.usedOn && <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--color-disabled-text)', marginTop: 1 }}>{b.usedOn}에 사용함</div>}
               </div>
               {!b.usedOn && (
                 <button type="button" onClick={() => onDelete(routineId, b.id)} aria-label={`기타찬스 삭제 — ${b.reason}`} style={{ cursor: 'pointer', flex: '0 0 auto', width: 28, height: 28, borderRadius: '50%', background: 'var(--color-surface)', color: 'var(--color-muted)', fontSize: 14, fontWeight: 700 }}>✕</button>
@@ -1390,9 +1390,9 @@ function BonusChanceSection({ routineId, bonuses, chances, onAdd, onDelete }) {
 function RoutineForm({ routine, mode, canDelete, onCancel, onSave, onUpdate, onSetGoalType, onAdjustGoal, onDelete, bonuses, chances, onAddBonus, onDeleteBonus }) {
   const isAtLeast = routine.goalType === 'atLeast';
   const minCount = isAtLeast ? 1 : 0;
-  const seg = (on) => ({ flex: 1, textAlign: 'center', padding: '11px 0', borderRadius: 9, fontSize: 14.5, fontWeight: on ? 800 : 700, cursor: 'pointer', background: on ? 'var(--color-primary)' : 'transparent', color: on ? '#fff' : 'var(--color-muted)' });
+  const seg = (on) => ({ flex: 1, textAlign: 'center', padding: '11px 0', borderRadius: 9, fontSize: 14.5, fontWeight: on ? 800 : 700, cursor: 'pointer', background: on ? 'var(--color-primary-strong)' : 'transparent', color: on ? '#fff' : 'var(--color-muted)' });
   const stepBase = { width: 40, height: 40, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-surface)', border: '1px solid var(--color-border)', fontSize: 22, fontWeight: 800 };
-  const stepStyle = (enabled) => ({ ...stepBase, color: enabled ? 'var(--color-text)' : 'var(--color-field-border)', cursor: enabled ? 'pointer' : 'default' });
+  const stepStyle = (enabled) => ({ ...stepBase, color: enabled ? 'var(--color-text)' : 'var(--color-disabled-text)', cursor: enabled ? 'pointer' : 'default' });
   const label = { fontSize: 12.5, fontWeight: 800, color: 'var(--color-muted)', letterSpacing: '0.03em', marginBottom: 10 };
   const dialogRef = useDialogA11y(onCancel);
   // inset:0 오버레이는 셸의 safe-area padding을 벗어나므로(padding-box 기준) 자체 인셋을 둔다. 하단은 스크롤 본문 padding이 처리.
@@ -1467,13 +1467,14 @@ function CheckMark({ state, goalType, size, tick }) {
   const filled = state !== 'none';
   const isChance = state === 'chance';
   const logged = state === 'done' && goalType === 'atMost';
-  const bg = isChance ? 'var(--color-chance)' : logged ? 'var(--color-expired-bg)' : 'var(--color-primary)';
+  // 흰 ✓를 얹으므로 배경은 primary가 아니라 primary-strong이다(#8 다크 대비 — primary 위 흰 글자는 3.03:1).
+  const bg = isChance ? 'var(--color-chance)' : logged ? 'var(--color-expired-bg)' : 'var(--color-primary-strong)';
   const glyph = isChance ? '★' : logged ? '●' : '✓';
   return (
     <div
       role="img"
       aria-label={checkLabel(state, goalType)}
-      style={{ width: size, height: size, borderRadius: '50%', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: filled ? bg : 'transparent', border: filled ? (logged ? '2px solid var(--color-expired-text)' : 'none') : '2px solid var(--color-field-border)', color: logged ? 'var(--color-expired-text)' : filled ? '#fff' : 'transparent' }}
+      style={{ width: size, height: size, borderRadius: '50%', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: filled ? bg : 'transparent', border: filled ? (logged ? '2px solid var(--color-expired-text)' : 'none') : '2px solid var(--color-outline)', color: logged ? 'var(--color-expired-text)' : filled ? '#fff' : 'transparent' }}
     >
       {filled && <span style={{ fontSize: isChance ? tick - 1 : logged ? tick - 4 : tick, fontWeight: 800, lineHeight: 1 }}>{glyph}</span>}
     </div>
@@ -1491,16 +1492,16 @@ function rowBackground(state, routine) {
 
 // 보유 찬스 배지 — 주 1 · 월 1 · 보너스 n. 0인 항목은 흐리게.
 function ChanceBadge({ chances }) {
-  const dim = (n) => ({ fontSize: 11, fontWeight: 700, color: n ? 'var(--color-chance)' : 'var(--color-field-border)' });
+  const dim = (n) => ({ fontSize: 11, fontWeight: 700, color: n ? 'var(--color-chance)' : 'var(--color-disabled-text)' });
   const total = chances.weekly + chances.monthly + chances.bonus;
   return (
     <div aria-label={`남은 찬스 ${total}개 — 주 ${chances.weekly}, 월 ${chances.monthly}, 기타 ${chances.bonus}`} style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 3 }}>
       <span style={dim(chances.weekly)}>주 {chances.weekly}</span>
-      <span style={{ color: 'var(--color-border)', fontSize: 10 }}>·</span>
+      <span aria-hidden style={{ color: 'var(--color-outline)', fontSize: 10 }}>·</span>
       <span style={dim(chances.monthly)}>월 {chances.monthly}</span>
       {chances.bonus > 0 && (
         <>
-          <span style={{ color: 'var(--color-border)', fontSize: 10 }}>·</span>
+          <span aria-hidden style={{ color: 'var(--color-outline)', fontSize: 10 }}>·</span>
           <span style={dim(chances.bonus)}>기타 {chances.bonus}</span>
         </>
       )}
