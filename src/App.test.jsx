@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import App from './App';
-import { STORAGE_KEY, serializeState } from './appLogic';
+import { addDays, CHECK_KEPT, formatDateKey, startOfToday, STORAGE_KEY, serializeState } from './appLogic';
 
 const routine = { id: 'r1', name: '운동', iconKey: 'activity', color: '#0EA5A4', goalType: 'atLeast', goalCount: 7, visible: true };
 
@@ -46,6 +46,37 @@ describe('App persistence (#2)', () => {
     // 새로고침 시뮬레이션(재마운트) → 체크가 유지된다.
     render(<App />);
     expect(screen.getByText('이번 주 1/7회')).toBeInTheDocument();
+  });
+});
+
+describe('App 통계 — 기록 없는 주는 판정하지 않는다', () => {
+  const beer = { id: 'r2', name: '음주', iconKey: 'beer', color: '#E11D48', goalType: 'atMost', goalCount: 1, visible: true };
+  const openStats = () => fireEvent.click(screen.getByRole('button', { name: '통계' }));
+
+  it('기록이 없으면 0%가 아니라 —, 연속도 쌓이지 않는다', () => {
+    localStorage.setItem(STORAGE_KEY, serializeState({ routines: [beer], checks: {}, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 }));
+    render(<App />);
+    openStats();
+
+    // 예전에는 빈 과거 주가 "0회 ≤ 한도 1"로 전부 달성이 돼 연속 8주·100%로 보였다.
+    // '—'는 루틴 카드와 평균 달성률 요약 둘 다 — 요약만 0%로 남으면 미기록이 '실패'로 읽힌다.
+    expect(screen.getAllByText('—')).toHaveLength(2);
+    expect(screen.getByText('기록 없음')).toBeInTheDocument();
+    expect(screen.getByText('최고 연속').previousSibling).toHaveTextContent('0주');
+    expect(screen.getByText('평균 달성률').previousSibling).toHaveTextContent('—');
+  });
+
+  it('지난주에 지킴 기록이 있으면 그 주만 세어 연속 1주가 된다', () => {
+    const lastWeek = formatDateKey(addDays(startOfToday(), -7));
+    localStorage.setItem(
+      STORAGE_KEY,
+      serializeState({ routines: [beer], checks: { [lastWeek]: { r2: CHECK_KEPT } }, bonusChances: {}, weekStart: 0, notif: true, remindHour: 21 }),
+    );
+    render(<App />);
+    openStats();
+
+    expect(screen.getByText('연속 1주 · 1주 기록')).toBeInTheDocument();
+    expect(screen.getAllByText('100%')).toHaveLength(2); // 루틴 카드 + 평균 달성률 요약
   });
 });
 

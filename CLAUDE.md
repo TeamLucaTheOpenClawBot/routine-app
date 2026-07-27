@@ -33,6 +33,12 @@
   타이머·포커스/가시성 복귀 시 today를 갱신한다. **`TODAY` 고정 상수·import는 남기지 않는다.**
 - **주차 판정**: 주 시작 요일(`weekStart` 0=일/1=월) 기준. 과거 `WEEKS_BACK`주 ~ 미래 `WEEKS_FWD`주 창을
   today에 앵커. "완료된 주(finalized)"는 주 마지막날 < today 인 주만(진행 중 주는 통계에서 제외).
+  **기록이 하나도 없는 주는 판정하지 않는다**(#49) — `finalizedResults`가 true/false가 아니라
+  **`null`**을 넣는다(`weekHasRecord`). atMost는 빈 주가 0회라 `achieved`가 저절로 참이 돼, 앱을 깔기도
+  전인 주까지 "연속 8주"·100%로 세던 문제 때문이다. 그래서 `achievementRate`는 **판정된 주만 분모**로
+  쓰고(`judgedWeeks`), `currentStreak`은 `=== true`만 세어 **null에서 끊는다**(건너뛰고 이으면 쉰
+  기간이 연속이 된다). 뷰는 판정된 주가 0이면 `0%`가 아니라 `—`를 보여준다(기록 없음 ≠ 못 지킴),
+  히트맵도 달성/미달성/기록없음 3-상태다.
 - **상태/영속화**(#2 완료): `localStorage`에 영속화한다. `appLogic.js`의 순수 함수
   `serializeState`/`parseState`(스키마 `version` 필드 + 손상·구버전 방어)로 직렬화/검증하고,
   얇은 래퍼 `loadState`/`saveState`/`clearState`(SSR·프라이빗 모드 방어, storage 주입 가능)가

@@ -287,7 +287,20 @@ export function purgeRoutineBonuses(bonusChances, routineId) {
 }
 
 // ---- stats ----
-// 완료된(finalized) 주들의 달성 여부 배열 — 오래된 주가 앞.
+// 그 주에 이 루틴 기록이 하나라도 있는가(했음·지킴·찬스 무엇이든).
+export function weekHasRecord(weekStart, routineId, checks) {
+  for (let i = 0; i < 7; i += 1) {
+    const key = formatDateKey(addDays(weekStart, i));
+    if (checks[key]?.[routineId] !== undefined) return true;
+  }
+  return false;
+}
+
+// 완료된(finalized) 주들의 달성 여부 배열 — 오래된 주가 앞. 값은 true|false|**null**이다.
+// **기록이 하나도 없는 주는 판정하지 않고 null**로 남긴다: 줄이기(atMost) 루틴은 빈 주가 0회라
+// `achieved`가 저절로 참이 돼, 앱을 깔기도 전인 주까지 "연속 달성"과 달성률에 섞여 들어간다
+// (음주가 쓰기 시작하자마자 연속 8주로 보이던 문제). 늘리기도 대칭으로 다룬다 — 판정의 근거가
+// 되는 기록이 없으면 성공도 실패도 아니다.
 export function finalizedResults(routine, checks, weekStart, today) {
   const start = rangeStart(today, weekStart);
   const results = [];
@@ -295,21 +308,30 @@ export function finalizedResults(routine, checks, weekStart, today) {
     const ws = addDays(start, w * 7);
     const we = addDays(ws, 6);
     if (!(we < today)) continue; // 완료된 주만
-    results.push(achieved(routine, weekCount(ws, routine, checks)));
+    results.push(weekHasRecord(ws, routine.id, checks) ? achieved(routine, weekCount(ws, routine, checks)) : null);
   }
   return results;
 }
 
-export function achievementRate(results) {
-  if (!results.length) return 0;
-  const ok = results.filter(Boolean).length;
-  return Math.round((ok / results.length) * 100);
+// 판정된(기록이 있는) 주의 수 — 뷰가 "아직 통계를 낼 게 없음"을 구분하는 데 쓴다.
+export function judgedWeeks(results) {
+  return results.filter((r) => r !== null).length;
 }
 
+// 달성률은 **판정된 주만** 분모로 삼는다 — 기록 없는 주를 실패로 세면 이제 막 시작한 사람의
+// 달성률이 영원히 바닥이고, 성공으로 세면 줄이기 루틴이 공짜로 100%가 된다.
+export function achievementRate(results) {
+  const judged = results.filter((r) => r !== null);
+  if (!judged.length) return 0;
+  const ok = judged.filter(Boolean).length;
+  return Math.round((ok / judged.length) * 100);
+}
+
+// 연속은 기록 없는 주(null)에서 끊는다 — 건너뛰고 이으면 쉬었던 기간을 연속이라 부르게 된다.
 export function currentStreak(results) {
   let streak = 0;
   for (let i = results.length - 1; i >= 0; i -= 1) {
-    if (results[i]) streak += 1;
+    if (results[i] === true) streak += 1;
     else break;
   }
   return streak;
