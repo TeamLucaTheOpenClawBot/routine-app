@@ -36,7 +36,8 @@ export default class ErrorBoundary extends Component {
   render() {
     if (!this.state.hasError) return this.props.children;
     const card = { background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 16, padding: '22px 20px', maxWidth: 340, width: '100%', textAlign: 'center', boxShadow: 'var(--shadow-lg)' };
-    const btn = (primary) => ({ cursor: 'pointer', width: '100%', padding: '11px 14px', borderRadius: 12, fontSize: 14, fontWeight: 800, background: primary ? 'var(--color-primary)' : 'var(--color-bg)', color: primary ? '#fff' : 'var(--color-text)', border: primary ? 'none' : '1px solid var(--color-border)' });
+    // 흰 글자를 얹는 면이므로 배경은 primary가 아니라 primary-strong이다(#8 — primary 위 흰 글자 3.03:1).
+    const btn = (primary) => ({ cursor: 'pointer', width: '100%', padding: '11px 14px', borderRadius: 12, fontSize: 14, fontWeight: 800, background: primary ? 'var(--color-primary-strong)' : 'var(--color-bg)', color: primary ? '#fff' : 'var(--color-text)', border: primary ? 'none' : '1px solid var(--color-border)' });
     return (
       <div role="alert" style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: '#070B14', fontFamily: 'var(--font-sans)', color: 'var(--color-text)' }}>
         <div style={card}>

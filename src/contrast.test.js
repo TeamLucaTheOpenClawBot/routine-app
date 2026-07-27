@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 // 다크 테마 대비 점검(#8). 색은 index.css의 토큰이 원장이므로 **파일에서 실제 값을 읽어** 계산한다 —
@@ -43,6 +43,13 @@ function contrast(fg, bg) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+// 그라디언트는 색 하나가 아니라 구간이라 **양 끝**을 뽑아 각각 검사한다.
+function gradientStops() {
+  const stops = token('gradient-brand').match(/#[0-9a-f]{6}/gi);
+  if (!stops || stops.length < 2) throw new Error('그라디언트 색을 못 찾음');
+  return stops;
+}
+
 const SURFACE = token('color-surface');
 const BG = token('color-bg');
 const TINT = flatten(token('color-primary-50'), SURFACE);
@@ -59,6 +66,10 @@ const TEXT = [
   ['강조 틸 글자 — 카드 위', token('color-primary'), SURFACE, 4.5],
   ['틸 tint 위 글자', token('color-primary-text'), TINT, 4.5],
   ['채운 틸 버튼 위 흰 글자', '#ffffff', token('color-primary-strong'), 4.5],
+  // 브랜드 그라디언트도 **흰 글자를 얹는 면**이다(온보딩 '첫 루틴 만들기'). 양 끝 모두 검사해야
+  // 한 쪽만 통과하는 그라디언트를 놓치지 않는다.
+  ['그라디언트 시작 위 흰 글자', '#ffffff', gradientStops()[0], 4.5],
+  ['그라디언트 끝 위 흰 글자', '#ffffff', gradientStops()[1], 4.5],
   ['찬스 앰버 — 카드 위', token('color-chance'), SURFACE, 4.5],
   ['찬스 앰버 — tint 위', token('color-chance'), CHANCE_TINT, 4.5],
   ['달성 강조', token('color-active-text'), SURFACE, 4.5],
@@ -79,10 +90,35 @@ describe('다크 테마 대비 (WCAG AA · #8)', () => {
     expect(contrast(flatten(fg, bg), flatten(bg, BG))).toBeGreaterThanOrEqual(min);
   });
 
-  // 대비가 낮아 **글자·상태 표식에 쓰면 안 되는** 장식 토큰. 용도를 지켜야 위 검사가 의미를 갖는다.
-  it('장식용 토큰은 UI에서 글자색으로 쓰이지 않는다', () => {
-    const app = readFileSync(`${process.cwd()}/src/App.jsx`, 'utf8');
-    expect(app).not.toMatch(/color:\s*'var\(--color-field-border\)'/);
-    expect(app).not.toMatch(/color:\s*'var\(--color-border\)'/);
+  // 아래 두 검사는 **모든 UI 파일**을 훑는다 — App.jsx만 보면 ErrorBoundary처럼 평소 안 보이는
+  // 화면이 검사망 밖에 남는다(실제로 그랬다: 오류 화면 버튼이 흰 글자/primary 조합이었다).
+  const uiFiles = readdirSync(`${process.cwd()}/src`)
+    .filter((f) => f.endsWith('.jsx') && !f.endsWith('.test.jsx'))
+    .map((f) => [f, readFileSync(`${process.cwd()}/src/${f}`, 'utf8')]);
+
+  it.each(uiFiles)('%s — 장식용 토큰을 글자색으로 쓰지 않는다', (_name, source) => {
+    expect(source).not.toMatch(/color:\s*'var\(--color-field-border\)'/);
+    expect(source).not.toMatch(/color:\s*'var\(--color-border\)'/);
+  });
+
+  // 흰 글자를 얹는 면은 primary가 아니라 primary-strong이어야 한다(3.03:1 vs 5.47:1).
+  // 배경·글자가 한 스타일 객체 안에 함께 오므로 `}`를 넘지 않는 범위에서 둘이 붙어 있는지 본다.
+  // 삼항(`background: on ? 'var(--color-primary)' : …, color: on ? '#fff' : …`)이 실제 코드에서
+  // 가장 흔한 형태라 콤마를 건너뛸 수 있어야 한다 — 안 그러면 가드가 헛돈다.
+  const WHITE_ON_PRIMARY = /background:[^}]{0,160}?var\(--color-primary\)[^}]{0,160}?color:[^}]{0,80}?'#fff/gi;
+
+  it.each(uiFiles)('%s — 흰 글자를 --color-primary 배경에 얹지 않는다', (_name, source) => {
+    expect(source.match(WHITE_ON_PRIMARY) ?? []).toEqual([]);
+  });
+
+  it('가드 정규식이 실제 위반 형태를 잡는다', () => {
+    const direct = "style={{ background: 'var(--color-primary)', color: '#fff' }}";
+    const ternary = "background: on ? 'var(--color-primary)' : 'transparent', color: on ? '#fff' : 'x'";
+    const fixed = "background: 'var(--color-primary-strong)', color: '#fff'";
+    const textOnTint = "color: 'var(--color-primary)', background: 'var(--color-primary-50)'";
+    expect(direct.match(WHITE_ON_PRIMARY)).not.toBeNull();
+    expect(ternary.match(WHITE_ON_PRIMARY)).not.toBeNull();
+    expect(fixed.match(WHITE_ON_PRIMARY)).toBeNull();
+    expect(textOnTint.match(WHITE_ON_PRIMARY)).toBeNull();
   });
 });

@@ -12,7 +12,9 @@
   /* 틸 tint(--color-primary-50) **위에 얹는 글자·아이콘**. 같은 틸을 올리면 4.32:1로 미달이라
      한 단계 밝은 값을 쓴다(tint 위 5.90:1, surface 위 7.43:1). */
   --color-primary-text: #22c1c0;
-  --gradient-brand: linear-gradient(135deg, #0ea5a4, #16a34a);
+  /* 브랜드 그라디언트 — **흰 글자를 얹는 면**이라 양 끝 모두 흰 글자 4.5:1을 넘겨야 한다
+     (원래 #0ea5a4→#16a34a는 3.03·3.30:1로 미달이었다 · #8). primary-strong과 같은 톤으로 맞춘다. */
+  --gradient-brand: linear-gradient(135deg, #0f766e, #15803d);
 
   /* 다크 중립 */
   --color-bg: #0b1220; /* 앱/스크롤 배경 */
