@@ -120,8 +120,13 @@
   기본 비활성 — Access 설정 전에 켜지면 크래시 루프가 된다. 켜는 절차는 `deploy/README.md`.
   - **nginx `/api/` 프록시는 upstream을 변수로 지정**하고 `resolver`를 둔다. 리터럴로 쓰면 nginx가
     기동 시 이름을 해석하고 API 컨테이너가 없을 때 **nginx가 안 떠서 프론트까지 내려간다.**
-  - Workbox `navigateFallbackDenylist`에 `/api/`를 넣는다 — 없으면 동기화 요청이 앱 셸(index.html)로
-    폴백돼 클라이언트가 HTML을 JSON으로 파싱하려 든다.
+  - Workbox `navigateFallbackDenylist`에 **`/api/`와 `/cdn-cgi/` 둘 다** 넣는다(`vite.config.js`).
+    `/api/`가 없으면 동기화 요청이 앱 셸(index.html)로 폴백돼 클라이언트가 HTML을 JSON으로 파싱하려 든다.
+    **`/cdn-cgi/`가 없으면 Access 로그인이 아예 성립하지 않는다**(#56) — 콜백
+    `/cdn-cgi/access/authorized`는 엣지가 처리해 세션 쿠키를 심는데, 이것도 **내비게이션**이라
+    SW가 캐시된 앱 셸로 가로채면 쿠키가 안 심어진다. 증상이 고약하다: 로그인해도 계속 미연결이고,
+    엣지에서 튕기니 **origin 로그에 요청이 아예 안 남아** 서버를 아무리 봐도 단서가 없다.
+    빌드 설정이라 유닛 테스트로 안 잡혀 `src/swConfig.test.js`가 설정 파일 텍스트로 두 패턴을 지킨다.
   - 동기화 모델은 **셀 단위 merge**(전체 문서 LWW 아님) + 클라이언트 outbox. 근거·분할은 이슈 #7 코멘트.
   - **저장소**(`server/src/store.js`, SQLite `node:sqlite`): `cells`는 (날짜, 루틴) 한 칸이 한 행이라
     서로 다른 칸은 두 기기가 각각 고쳐도 둘 다 살아남고, 같은 칸만 `ts` LWW로 겨룬다.

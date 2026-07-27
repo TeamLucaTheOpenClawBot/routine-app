@@ -38,10 +38,16 @@ export default defineConfig({
         // push/notificationclick만 얹어 PWA 셸 설정을 그대로 둔다. 파일은 public/push-sw.js.
         importScripts: ['push-sw.js'],
         navigateFallback: 'index.html',
-        // /api/*는 앱 셸로 폴백시키지 않는다(#7). 이게 없으면 동기화 요청이 오프라인·SW 경유 시
-        // index.html을 받아 클라이언트가 HTML을 JSON으로 파싱하려 들고, 실패가 '동기화 오류'로
-        // 뭉개져 원인을 못 찾는다. 네트워크 오류로 정직하게 실패하는 편이 낫다.
-        navigateFallbackDenylist: [/^\/api\//],
+        // 앱 셸로 폴백시키면 안 되는 경로들.
+        //  - `/api/*`(#7): 이게 없으면 동기화 요청이 오프라인·SW 경유 시 index.html을 받아
+        //    클라이언트가 HTML을 JSON으로 파싱하려 들고, 실패가 '동기화 오류'로 뭉개져 원인을
+        //    못 찾는다. 네트워크 오류로 정직하게 실패하는 편이 낫다.
+        //  - `/cdn-cgi/*`(#56): **Cloudflare Access 로그인이 여기서 끝난다.** 콜백
+        //    `/cdn-cgi/access/authorized`는 엣지가 처리해 세션 쿠키를 심고 원래 주소로 돌려보내는데,
+        //    이건 내비게이션이라 denylist에 없으면 SW가 캐시된 앱 셸을 대신 내준다 → 콜백이 엣지에
+        //    닿지 못해 **쿠키가 영원히 안 심어지고 로그인이 성립하지 않는다**(요청이 origin 로그에도
+        //    안 남아 원인 찾기가 어렵다). PWA + Access 조합에서 반드시 필요하다.
+        navigateFallbackDenylist: [/^\/api\//, /^\/cdn-cgi\//],
         cleanupOutdatedCaches: true,
       },
       // 개발 서버에선 SW 비활성(캐시로 인한 개발 혼선 방지).
