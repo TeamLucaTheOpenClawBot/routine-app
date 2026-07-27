@@ -28,6 +28,7 @@ import {
   finalizedResults,
   judgedWeeks,
   showsLoginLink,
+  weekHasRecord,
   achievementRate,
   currentStreak,
   loadState,
@@ -537,7 +538,9 @@ function App() {
       const achievedIds = new Set();
       const chips = [];
       visibleRoutines.forEach((routine) => {
-        if (finalized && achieved(routine, weekCount(ws, routine, checks))) {
+        // 통계와 같은 규칙(#49): 기록이 하나도 없는 주는 판정하지 않는다. atMost는 빈 주가 0회라
+        // achieved가 저절로 참이 돼, 앱을 쓰기도 전인 주에 달성 칩(과 glow)이 붙는다.
+        if (finalized && weekHasRecord(ws, routine.id, checks) && achieved(routine, weekCount(ws, routine, checks))) {
           achievedIds.add(routine.id);
           chips.push(routine);
         }
@@ -970,7 +973,7 @@ function CalendarScreen({ weeks, weekStart, monthTitle, statText, onAdd, onOpenD
               {week.chips.length > 0 && (
                 <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
                   {week.chips.map((routine) => (
-                    <div key={routine.id} style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', background: rgba(routine.color, 0.16), boxShadow: `0 0 0 1.5px ${rgba(routine.color, 0.85)}, 0 0 9px ${rgba(routine.color, 0.5)}`, animation: 'glowPulse 2.6s ease-in-out infinite' }}>
+                    <div key={routine.id} role="img" aria-label={`${routine.name} 주간 목표 달성`} style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', background: rgba(routine.color, 0.16), boxShadow: `0 0 0 1.5px ${rgba(routine.color, 0.85)}, 0 0 9px ${rgba(routine.color, 0.5)}`, animation: 'glowPulse 2.6s ease-in-out infinite' }}>
                       <Icon name={routine.iconKey} size={13} color={routine.color} strokeWidth={2.2} />
                     </div>
                   ))}
